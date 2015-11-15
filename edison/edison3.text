@@ -1,0 +1,1527 @@
+"Edison-11 compiler: Pass 3
+
+ Syntax and semantic analysis
+
+ Per Brinch Hansen
+
+ 6 July 1981
+
+ Copyright (c) 1980 Per Brinch Hansen"
+
+enum symbol (also1, and1, array1, asterisk1, becomes1,
+  begin1, cobegin1, colon1, comma1, const1, div1,
+  do1, else1, end1, endtext1, enum1, equal1, error1,
+  graphic1, greater1, if1, in1, lbracket1, less1,
+  lib1, lparanth1, minus1, mod1, module1, name1,
+  newline1, not1, notequal1, notgreater1, notless1,
+  numeral1, or1, period1, plus1, pre1, post1, proc1,
+  rbracket1, record1, rparanth1, semicolon1, set1,
+  skip1, val1, var1, when1, while1)
+
+enum operator (add2, also2, and2, assign2, blank2,
+  cobegin2, constant2, construct2, difference2,
+  divide2, do2, else2, endcode2, endif2, endlib2,
+  endproc2, endwhen2, equal2, error2, field2,
+  funcval2, goto2, greater2, in2, index2,
+  intersection2, less2, libproc2, minus2, modulo2,
+  multiply2, newline2, not2, notequal2, notgreater2,
+  notless2, or2, paramarg2, paramcall2, parameter2,
+  procarg2, proccall2, procedure2, process2,
+  subtract2, union2, valspace2, value2, variable2,
+  wait2, when2, while2, addr2, halt2, obtain2,
+  place2, sense2)
+
+enum failure (blocklimit, charlimit, inputlimit,
+  labellimit, namelimit, outputlimit, processlimit,
+  wordlimit)
+
+proc pass3(
+  proc next(var value: symbol);
+  proc emit(value: operator);
+  proc fail(reason: failure))
+
+const "table limits" maxlabel = 1000; maxname = 750;
+  maxprocess = 20;
+
+"standard names" bool1 = 1; char1 = 2; false1 = 3;
+  int1 = 4; true1 = 5; univname1 = 6; univtype1 = 7;
+  addr1 = 8; halt1 = 9; obtain1 = 10; place1 = 11;
+  sense1 = 12;
+  last_standard = 20;
+
+"type lengths" elemlength = 1; liblength = 1;
+  proclength = 2; setlength = 8 "words";
+  setlimit = 127 " + 1 members";
+
+  none = 0
+
+enum namekind (univkind, constant, univtype,
+  elemtype, recordtype, arraytype, settype,
+  field, variable, valparam, varparam,
+  procparam, procedur, standard)
+
+"univkind variant:"
+
+record nameattr (kind: namekind; link: int;
+  none1, none2, none3, none4, none5: int)
+
+"constant variant:"
+
+record constattr (constkind: namekind; constlink: int;
+  consttype, constvalue, none6, none7, none8: int)
+
+"univtype, elemtype, recordtype, arraytype, and settype
+variant:"
+
+record typeattr (typekind: namekind; typelink: int;
+  length, subtype1, subtype2, bound1, bound2: int)
+
+"field, variable, valparam, and varparam variant:"
+
+record varattr (varkind: namekind; varlink,
+  varlevel, vardispl, vartype, none9, none10: int)
+
+"procparam, procedur, and standard variant:"
+
+record procattr (prockind: namekind; proclink: int;
+  proclevel, procaddr, proctype, param, none11: int)
+
+array nametable [1:maxname] (nameattr)
+
+record processattr (procconst, proclabel: int)
+
+array processtable [1:maxprocess] (processattr)
+
+set processset (int)
+
+proc emit2(a: operator; b: int)
+begin emit(a); emit(operator(b)) end
+
+proc emit3(a: operator; b, c: int)
+begin emit2(a, b); emit(operator(c)) end
+
+proc emit4(a: operator; b, c, d: int)
+begin emit3(a, b, c); emit(operator(d)) end
+
+proc emit5(a: operator; b, c, d, e: int)
+begin emit4(a, b, c, d); emit(operator(e)) end
+
+module "symbol sets"
+
+* set symbols (symbol)
+
+* var addsym, constsym, declsym, equalitysym, exprsym,
+    hiddensym, initdeclsym, literalsym, multsym,
+    ordersym, pairsym, procsym, relationsym,
+    selectsym, signsym, statsym, typesym: symbols
+
+begin addsym := symbols(minus1, or1, plus1);
+  constsym := symbols(graphic1, name1, numeral1);
+  declsym := symbols(array1, const1, enum1, lib1,
+    module1, post1, pre1, proc1, record1, set1, var1);
+  equalitysym := symbols(equal1, notequal1);
+  exprsym := symbols(graphic1, lparanth1, minus1,
+    not1, numeral1, plus1, val1);
+  hiddensym := symbols(error1, newline1);
+  initdeclsym := symbols(array1, const1, enum1,
+    record1, set1);
+  literalsym := symbols(graphic1, numeral1);
+  multsym := symbols(and1, asterisk1, div1, mod1);
+  ordersym := symbols(greater1, less1, notgreater1,
+    notless1);
+  pairsym := symbols(graphic1, name1, numeral1);
+  procsym := symbols(lib1, post1, pre1, proc1);
+  relationsym := symbols(equal1, greater1, in1,
+    less1, notequal1, notgreater1, notless1);
+  selectsym := symbols(colon1, lbracket1, period1);
+  signsym := symbols(minus1, plus1);
+  statsym := symbols(cobegin1, if1, skip1, when1,
+    while1);
+  typesym := symbols(array1, enum1, record1, set1)
+end
+
+
+module "input"
+
+* var sym: symbol; x: int
+
+* proc nextsym
+  begin next(sym);
+    while sym in hiddensym do
+      next(x:symbol);
+      if sym = error1 do emit2(error2, x)
+      else sym = newline1 do emit2(newline2, x) end;
+      next(sym)
+    end;
+    if sym in pairsym do next(x:symbol) end
+  end
+
+begin nextsym end
+
+
+module "names"
+
+* set namekinds (namekind)
+
+* var names: nametable;
+    typekinds, varkinds, prockinds: namekinds
+
+* proc standard_names
+  begin
+    names[int1] := typeattr(elemtype, none, elemlength,
+      none, none, none, none):nameattr;
+    names[bool1] := names[int1];
+    names[char1] := names[int1];
+    names[false1] := constattr(constant, none, bool1,
+      int(false), none, none, none):nameattr;
+    names[true1] := constattr(constant, none, bool1,
+      int(true), none, none, none):nameattr;
+    names[univname1] := nameattr(univkind, none, none,
+      none, none, none, none);
+    names[addr1] := procattr(standard, none, 0, none,
+      int1, none, none):nameattr;
+    names[halt1] := procattr(standard, none, 0, none,
+      univtype1, none, none):nameattr;
+    names[obtain1] := names[halt1];
+    names[place1] := names[halt1];
+    names[sense1] := procattr(standard, none, 0, none,
+      bool1, none, none):nameattr
+  end
+
+* proc isfunction(x: int): bool
+  begin
+    if names[x].kind in prockinds do
+      val isfunction :=
+        names[x]:procattr.proctype <> univtype1
+    else true do val isfunction := false end
+  end
+
+var i: int
+begin i := 0;
+  while i < maxname do
+    i := i + 1;
+    names[i] := nameattr(univkind, none, none, none,
+      none, none, none)
+  end;
+  typekinds := namekinds(univtype, elemtype, recordtype,
+    arraytype, settype);
+  varkinds := namekinds(variable, valparam, varparam);
+  prockinds := namekinds(procparam, procedur, standard)
+end
+
+
+module "labels"
+
+  var labelno: int
+
+* proc newlabel(var value: int)
+  begin
+    if labelno = maxlabel do fail(labellimit) end;
+    labelno := labelno + 1; value := labelno
+  end
+
+begin labelno := 0 end
+
+
+module "errors"
+
+* enum errorkind (ambiguous3, call3, cobegin3,
+    constructor3, funcval3, incomplete3, numeral3,
+    range3, split3, syntax3, type3, undeclared3)
+
+* proc error(kind: errorkind)
+  begin emit2(error2, int(kind)) end
+
+* proc syntax(succ: symbols)
+  begin error(syntax3);
+    while not (sym in succ) do nextsym end
+  end
+
+* proc check(succ: symbols)
+  begin if not (sym in succ) do syntax(succ) end end
+
+* proc checksym(s: symbol; succ: symbols)
+  begin
+    if sym = s do nextsym
+    else true do syntax(succ) end
+  end
+
+* proc kinderror1(name: int)
+  begin if name <> univname1 do error(type3) end end
+
+* proc kinderror2(name: int; var typ: int)
+  begin kinderror1(name); typ := univtype1 end
+
+* proc typerror1
+  begin error(type3) end
+
+* proc typerror2(var typ: int)
+  begin
+    if typ <> univtype1 do
+      typerror1; typ := univtype1
+    end
+  end
+
+* proc checkelem(var typ: int)
+  begin
+    if names[typ].kind <> elemtype do
+      typerror2(typ)
+    end
+  end
+
+* proc checktype(var typ1: int; typ2: int)
+  begin
+    if typ1 <> typ2 do
+      if typ2 = univtype1 do typ1 := univtype1
+      else true do typerror2(typ1) end
+    end
+  end
+
+begin skip end
+
+
+pre proc variable_list(kind: namekind; level, displ: int;
+  var first, length: int; succ: symbols)
+
+pre proc procedure_heading(postx: bool; level: int;
+  var name, paramlength: int; succ: symbols)
+
+pre proc declaration(level, displ: int;
+  var varlength: int; succ: symbols)
+
+pre proc expression(var typ: int; succ: symbols)
+
+pre proc procedure_call(succ: symbols)
+
+pre proc statement_list(succ: symbols)
+
+"control_symbol:
+   'char' '(' numeral ')'"
+
+proc control_symbol(var typ, value: int; succ: symbols)
+begin "(sym = name1) and (x = char1)" nextsym;
+  checksym(lparanth1, symbols(numeral1, rparanth1) + succ);
+  if sym = numeral1 do
+    typ := char1; value := x; nextsym
+  else true do
+    typ := univtype1; value := 0;
+    syntax(symbols(rparanth1) + succ)
+  end;
+  checksym(rparanth1, succ)
+end
+
+"constant_symbol:
+   numeral # character_symbol # constant_name
+ character_symbol:
+   graphic_symbol # control_symbol"
+
+proc constant_symbol(var typ, value: int; succ: symbols)
+var c: constattr
+begin typ := univtype1; value := 0;
+  if sym = numeral1 do
+    typ := int1; value := x; nextsym
+  else sym = graphic1 do
+    typ := char1; value := x; nextsym
+  else sym = name1 do
+    if x = char1 do control_symbol(typ, value, succ)
+    else names[x].kind = constant do
+      c := names[x]:constattr; typ := c.consttype;
+      value := c.constvalue; nextsym
+    else true do
+      kinderror1(x); nextsym
+    end
+  else true do syntax(succ) end;
+  check(succ)
+end
+
+"constant_declaration:
+   constant_name '=' constant_symbol"
+
+proc constant_declaration(succ: symbols)
+var name, typ, value: int
+begin
+  if sym = name1 do
+    name := x; nextsym;
+    checksym(equal1, constsym + succ);
+    constant_symbol(typ, value, succ);
+    names[name] := constattr(constant, none, typ, value,
+      none, none, none):nameattr
+  else true do syntax(succ) end;
+  check(succ)
+end
+
+"constant_declaration_list:
+   'const' constant_declaration
+     [ ';' constant_declaration ]*"
+
+proc constant_declaration_list(succ: symbols)
+var enddecl: symbols
+begin "sym = const1" nextsym;
+  enddecl := symbols(semicolon1) + succ;
+  constant_declaration(enddecl);
+  while sym = semicolon1 do
+    nextsym; constant_declaration(enddecl)
+  end
+end
+
+"enumeration_symbol:
+   constant_name"
+
+proc enumeration_symbol(typ, value: int; succ: symbols)
+begin
+  if sym = name1 do
+    names[x] := constattr(constant, none, typ, value,
+      none, none, none):nameattr;
+    nextsym
+  else true do syntax(succ) end;
+  check(succ)
+end
+
+"enumeration_symbol_list:
+   enumeration_symbol [ ',' enumeration_symbol ]*"
+
+proc enumeration_symbol_list(typ: int; succ: symbols)
+var endsym: symbols; value: int
+begin endsym := symbols(comma1) + succ; value := 0;
+  enumeration_symbol(typ, value, endsym);
+  while sym = comma1 do
+    nextsym; value := value + 1;
+    enumeration_symbol(typ, value, endsym)
+  end;
+  check(succ)
+end
+
+"enumeration_type:
+   'enum' type_name '(' enumeration_symbol_list ')'"
+
+proc enumeration_type(succ: symbols)
+var typ: int
+begin "sym = enum1" nextsym;
+  if sym = name1 do
+    typ := x; nextsym;
+    checksym(lparanth1, symbols(name1, rparanth1) + succ);
+    enumeration_symbol_list(typ, symbols(rparanth1)
+      + succ);
+    checksym(rparanth1, succ);
+    names[typ] := typeattr(elemtype, none, elemlength,
+      none, none, none, none):nameattr
+  else true do syntax(succ) end
+end
+
+"record_type:
+   'record' type_name '(' field_list ')'
+ field_list:
+   variable_list"
+
+proc record_type(succ: symbols)
+var typ, first, length: int
+begin "sym = record1" nextsym;
+  if sym = name1 do
+    typ := x; nextsym;
+    checksym(lparanth1, symbols(name1, rparanth1) + succ);
+    variable_list(field, 0, 0, first, length,
+      symbols(rparanth1) + succ);
+    checksym(rparanth1, succ);
+    names[typ] := typeattr(recordtype, none, length,
+      first, none, none, none):nameattr
+  else true do syntax(succ) end
+end
+
+"range_symbol:
+   constant_symbol ':' constant_symbol"
+
+proc range_symbol(var typ, lower, upper: int;
+  succ: symbols)
+var typ2: int
+begin
+  constant_symbol(typ, lower,
+    symbols(colon1) + constsym + succ);
+  checksym(colon1, constsym + succ);
+  constant_symbol(typ2, upper, succ);
+  checktype(typ, typ2);
+  if lower > upper do
+    error(range3); lower := upper
+  end
+end
+
+"type_name:
+   name"
+
+proc type_name(var typ: int; succ: symbols)
+begin
+  if sym = name1 do
+    if names[x].kind in typekinds do typ := x
+    else true do kinderror2(x, typ) end;
+    nextsym
+  else true do syntax(succ); typ := univtype1 end
+end
+
+"array_type:
+   'array' type_name '[' range_symbol ']'
+   '(' element_type ')'
+ element_type:
+   type_name"
+
+proc array_type(succ: symbols)
+var typ, rangetype, lower, upper, elemtype: int
+begin "sym = array1" nextsym;
+  if sym = name1 do
+    typ := x; nextsym;
+    checksym(lbracket1, constsym + symbols(rbracket1,
+      lparanth1, name1, rparanth1) + succ);
+    range_symbol(rangetype, lower, upper,
+      symbols(rbracket1, lparanth1, name1, rparanth1)
+      + succ);
+    checksym(rbracket1, symbols(lparanth1, name1,
+      rparanth1) + succ);
+    checksym(lparanth1, symbols(name1, rparanth1) + succ);
+    type_name(elemtype, symbols(rparanth1) + succ);
+    checksym(rparanth1, succ);
+    names[typ] := typeattr(arraytype, none,
+      (upper - lower + 1) *
+      names[elemtype]:typeattr.length, rangetype,
+      elemtype, lower, upper):nameattr
+  else true do syntax(succ) end
+end
+
+"set_type:
+   'set' type_name '(' base_type ')'
+ base_type:
+   type_name"
+
+proc set_type(succ: symbols)
+var typ, basetype: int
+begin "sym = set1" nextsym;
+  if sym = name1 do
+    typ := x; nextsym;
+    checksym(lparanth1, symbols(name1, rparanth1) + succ);
+    type_name(basetype, symbols(rparanth1) + succ);
+    checkelem(basetype);
+    checksym(rparanth1, succ);
+    names[typ] := typeattr(settype, none, setlength,
+      basetype, none, none, none):nameattr
+  else true do syntax(succ) end
+end
+
+"type_declaration:
+   enumeration_type # record_type #
+   array_type # set_type"
+
+proc type_declaration(succ: symbols)
+begin "sym in typesym"
+  if sym = enum1 do enumeration_type(succ)
+  else sym = record1 do record_type(succ)
+  else sym = array1 do array_type(succ)
+  else sym = set1 do set_type(succ) end
+end
+
+"variable_group:
+   variable_name [ ',' variable_name ]* ':' type_name"
+
+proc variable_group(kind: namekind;
+  level, addr: int; var first, last, size: int;
+  succ: symbols)
+var typ, varlength, nextvar, i: int
+begin first := none; last := none; size := 0;
+  if sym = name1 do
+    first := x; last := x; nextsym;
+    while sym = comma1 do
+      nextsym;
+      if sym = name1 do
+        names[last].link := x; last := x; nextsym
+      else true do
+        syntax(symbols(comma1, colon1) + succ)
+      end
+    end;
+    names[last].link := none;
+    checksym(colon1, succ); type_name(typ, succ);
+    if kind = varparam do varlength := elemlength
+    else true do
+      varlength := names[typ]:typeattr.length
+    end;
+    i := first;
+    while i <> none do
+      nextvar := names[i].link;
+      names[i] := varattr(kind, nextvar, level,
+        addr + size, typ, none, none):nameattr;
+      size := size + varlength; i := nextvar
+    end;
+    check(succ)
+  else true do syntax(succ) end
+end
+
+"variable_list:
+   variable_group [ ';' variable_group ]*"
+
+post proc variable_list(kind: namekind; level, displ: int;
+  var first, length: int; succ: symbols)
+var last, first2, last2, length2: int; endgroup: symbols
+begin endgroup := symbols(semicolon1) + succ;
+  variable_group(kind, level, displ, first, last,
+    length, endgroup);
+  while sym = semicolon1 do
+    nextsym;
+    variable_group(kind, level, displ + length,
+      first2, last2, length2, endgroup);
+    if length2 > 0 do
+      if length = 0 do first := first2
+      else true do names[last].link := first2 end;
+      last := last2; length := length + length2
+    end
+  end;
+  check(succ)
+end
+
+"variable_declaration_list:
+   'var' variable_list"
+
+proc variable_declaration_list(level, displ: int;
+  var length: int; succ: symbols)
+var first: int
+begin "sym = var1" nextsym;
+  variable_list(variable, level, displ, first,
+    length:succ)
+end
+
+"parameter_group:
+   [ 'var' ] variable_group # procedure_heading"
+
+proc parameter_group(level, displ: int;
+  var first, last, length: int; succ: symbols)
+var name, paramlength: int; varkind: namekind
+begin
+  if sym = proc1 do
+    procedure_heading(false, level, name,
+      paramlength, succ);
+    if name <> univname1 do
+      names[name].kind := procparam;
+      names[name]:procattr.procaddr := displ;
+      first := name; last := name; length := proclength
+    else true do
+      first := none; last := none; length := 0
+    end
+  else true do
+    if sym = var1 do varkind := varparam; nextsym
+    else true do varkind := valparam end;
+    variable_group(varkind, level, displ, first,
+      last, length, succ)
+  end;
+  check(succ)
+end
+
+"parameter_list:
+   parameter_group [ ';' parameter_group ]*"
+
+proc parameter_list(level: int;
+  var first, length: int; succ: symbols)
+var last, first2, last2, length2: int; endgroup: symbols
+begin endgroup := symbols(semicolon1) + succ;
+  parameter_group(level, 0, first, last,
+    length, endgroup);
+  while sym = semicolon1 do
+    nextsym;
+    parameter_group(level, length, first2, last2,
+      length2, endgroup);
+    if length2 > 0 do
+      if length = 0 do first := first2
+      else true do names[last].link := first2 end;
+      last := last2; length := length + length2
+    end
+  end;
+  check(succ)
+end
+
+"procedure_heading:
+   'proc' procedure_name [ '(' parameter_list ')' ]
+   [':' type_name ]"
+
+post proc procedure_heading(postx: bool; level: int;
+  var name, paramlength: int; succ: symbols)
+var proclabel, firstparam, typ: int
+begin
+  checksym(proc1, symbols(name1, lparanth1, colon1)
+    + succ);
+  if sym = name1 do
+    name := x; nextsym;
+    if postx and (name <> univname1) do
+      proclabel := names[name]:procattr.procaddr
+    else true do newlabel(proclabel) end;
+    if sym = lparanth1 do
+      nextsym;
+      parameter_list(level + 1, firstparam, paramlength,
+        symbols(rparanth1, colon1) + succ);
+      checksym(rparanth1, symbols(colon1) + succ)
+    else true do
+      firstparam := none; paramlength := 0
+    end;
+    if sym = colon1 do nextsym; type_name(typ, succ)
+    else true do typ := univtype1 end;
+    names[name] := procattr(procedur, none, level,
+      proclabel, typ, firstparam, none):nameattr
+  else true do
+    name := univname1; paramlength := 0;
+    syntax(succ)
+  end;
+  check(succ)
+end
+
+"procedure_body:
+   [ declaration ]* 'begin' statement_list 'end'"
+
+proc procedure_body(level: int; var varlength: int;
+  succ: symbols)
+var sublength: int
+begin varlength := 0;
+  while sym in declsym do
+    declaration(level, varlength, sublength,
+      declsym + symbols(begin1, end1) + statsym + succ);
+    varlength := varlength + sublength
+  end;
+  checksym(begin1, statsym + symbols(end1) + succ);
+  statement_list(symbols(end1) + succ);
+  checksym(end1, succ)
+end
+
+"complete_procedure:
+   procedure_heading procedure_body"
+
+proc complete_procedure(postx: bool; level: int;
+  succ: symbols)
+var name, proclabel, paramlength, endlabel, varlabel,
+  templabel, varlength: int
+begin
+  procedure_heading(postx, level, name, paramlength,
+    declsym + symbols(begin1) + statsym + succ);
+  if name <> univname1 do
+    proclabel := names[name]:procattr.procaddr
+  else true do newlabel(proclabel) end;
+  newlabel(endlabel); newlabel(varlabel);
+  newlabel(templabel);
+  if level > 0 do emit2(goto2, endlabel) end;
+  emit5(procedure2, proclabel, paramlength,
+    varlabel, templabel);
+  procedure_body(level + 1, varlength, succ);
+  emit5(endproc2, varlabel, varlength,
+    templabel, endlabel)
+end
+
+"preprocedure:
+   'pre' procedure_heading"
+
+proc preprocedure(level: int; succ: symbols)
+var name, paramlength: int
+begin "sym = pre1" nextsym;
+  procedure_heading(false, level, name,
+    paramlength, succ)
+end
+
+"postprocedure:
+   'post' complete_procedure"
+
+proc postprocedure(level: int; succ: symbols)
+begin "sym = post1" nextsym;
+  complete_procedure(true, level, succ)
+end
+
+"library_procedure:
+   'lib' procedure_heading '[' expression ']'"
+
+proc library_procedure(level: int; succ: symbols)
+var name, paramlength, proclabel, endlabel,
+  templabel, exprtype: int
+begin "sym = lib1" nextsym;
+  procedure_heading(false, level, name, paramlength,
+    symbols(lbracket1, rbracket1) + exprsym + succ);
+  if name <> univname1 do
+    proclabel := names[name]:procattr.procaddr
+  else true do newlabel(proclabel) end;
+  newlabel(endlabel); newlabel(templabel);
+  emit2(goto2, endlabel);
+  emit4(libproc2, proclabel, paramlength, templabel);
+  checksym(lbracket1, symbols(rbracket1) + exprsym + succ);
+  expression(exprtype, symbols(rbracket1) + succ);
+  checksym(rbracket1, succ);
+  emit3(endlib2, templabel, endlabel)
+end
+
+"procedure_declaration:
+   complete_procedure # preprocedure #
+   postprocedure # library_procedure"
+
+proc procedure_declaration(level: int; succ: symbols)
+begin "sym in procsym"
+  if sym = proc1 do
+    complete_procedure(false, level, succ)
+  else sym = pre1 do preprocedure(level, succ)
+  else sym = post1 do postprocedure(level, succ)
+  else sym = lib1 do library_procedure(level, succ) end
+end
+
+"module_declaration:
+   'module' [ [ '*' ] declaration ]*
+   'begin' statement_list 'end'"
+
+proc module_declaration(level, displ: int;
+  var varlength: int; succ: symbols)
+var sublength: int
+begin "sym = module1" nextsym;
+  varlength := 0;
+  while sym in (symbols(asterisk1) + declsym) do
+    if sym = asterisk1 do nextsym end;
+    declaration(level, displ + varlength, sublength,
+      declsym + symbols(asterisk1, begin1, end1)
+      + statsym + succ);
+    varlength := varlength + sublength
+  end;
+  checksym(begin1, statsym + symbols(end1) + succ);
+  statement_list(symbols(end1) + succ);
+  checksym(end1, succ)
+end
+
+"declaration:
+   constant_declaration list # type_declaration #
+   variable_declaration_list # procedure_declaration #
+   module_declaration"
+
+post proc declaration(level, displ: int;
+  var varlength: int; succ: symbols)
+begin varlength := 0;
+  if sym = const1 do constant_declaration_list(succ)
+  else sym in typesym do type_declaration(succ)
+  else sym = var1 do
+    variable_declaration_list(level, displ,
+      varlength, succ)
+  else sym in procsym do
+    procedure_declaration(level, succ)
+  else sym = module1 do
+    module_declaration(level, displ, varlength, succ)
+  else true do syntax(succ) end;
+  check(succ)
+end
+
+"function_variable:
+   'val' procedure_name"
+
+proc function_variable(var typ: int; succ: symbols)
+var p: procattr
+begin "sym = val1" nextsym;
+  if sym = name1 do
+    if isfunction(x) do
+      p := names[x]:procattr; typ := p.proctype;
+      emit3(funcval2, p.proclevel,
+        names[typ]:typeattr.length)
+    else true do kinderror2(x, typ) end;
+    nextsym
+  else true do typ := univtype1; syntax(succ) end
+end
+
+"field_selector:
+   '.' field_name"
+
+proc field_selector(var typ: int; succ: symbols)
+var t: typeattr; v: varattr; i: int
+begin "sym = period1" nextsym;
+  if sym = name1 do
+    t := names[typ]:typeattr;
+    if t.typekind = recordtype do
+      i := t.subtype1;
+      while (i <> none) and (i <> x) do
+        i := names[i].link
+      end;
+      if i = x do
+        v := names[x]:varattr; typ := v.vartype;
+        emit2(field2, v.vardispl)
+      else true do kinderror2(x, typ) end
+    else true do typerror2(typ) end;
+    nextsym; check(succ)
+  else true do typ := univtype1; syntax(succ) end
+end
+
+"indexed_selector:
+   '[' expression ']'"
+
+proc indexed_selector(var typ: int; succ: symbols)
+var t: typeattr; exprtype: int
+begin "sym = lbracket1" nextsym;
+  t := names[typ]:typeattr;
+  expression(exprtype, symbols(rbracket1) + succ);
+  if t.typekind:arraytype do
+    if exprtype = t.subtype1 do
+      typ := t.subtype2;
+      emit4(index2, t.bound1, t.bound2,
+        names[typ]:typeattr.length)
+    else true do typerror2(typ) end
+  else true do typerror2(typ) end;
+  checksym(rbracket1, succ); check(succ)
+end
+
+"type_transfer:
+   ':' type_name"
+
+proc type_transfer(var typ: int; succ: symbols)
+var typ2: int
+begin "sym = colon1" nextsym;
+  type_name(typ2, succ);
+  if names[typ]:typeattr.length =
+    names[typ2]:typeattr.length do typ := typ2
+  else true do typerror2(typ) end;
+  check(succ)
+end
+
+"variable_symbol:
+   variable_name # function_variable #
+   variable_symbol selector
+ selector:
+   field_selector # indexed_selector # type_transfer"
+
+proc variable_symbol(var typ: int; succ: symbols)
+var v: varattr; endvar: symbols
+begin endvar := selectsym + succ;
+  if sym = name1 do
+    if names[x].kind in varkinds do
+      v := names[x]:varattr; typ := v.vartype;
+      if v.varkind = variable do
+        emit3(variable2, v.varlevel, v.vardispl)
+      else v.varkind = valparam do
+        emit3(parameter2, v.varlevel, v.vardispl)
+      else v.varkind = varparam do
+        emit3(parameter2, v.varlevel, v.vardispl);
+        emit2(value2, elemlength)
+      end
+    else true do kinderror2(x, typ) end;
+    nextsym
+  else sym = val1 do function_variable(typ, endvar)
+  else true do typ := univtype1; syntax(endvar) end;
+  while sym = period1 do field_selector(typ, endvar)
+  else sym = lbracket1 do indexed_selector(typ, endvar)
+  else sym = colon1 do type_transfer(typ, endvar) end;
+  check(succ)
+end
+
+"constant_factor:
+   constant_symbol"
+
+proc constant_factor(var typ: int; succ: symbols)
+var value: int
+begin constant_symbol(typ, value, succ);
+  emit2(constant2, value)
+end
+
+"variable_factor:
+   variable_symbol"
+
+proc variable_factor(var typ: int; succ: symbols)
+begin variable_symbol(typ, succ);
+  emit2(value2, names[typ]:typeattr.length)
+end
+
+"elementary_expression:
+   expression"
+
+proc elementary_expression(typ: int; succ: symbols)
+var exprtype: int
+begin expression(exprtype, succ);
+  checkelem(exprtype)
+end
+
+"field_expression:
+   expression"
+
+proc field_expression(var name: int; succ: symbols)
+var typ: int; f: varattr
+begin expression(typ, succ);
+  if name <> none do
+    f := names[name]:varattr;
+    checktype(typ, f.vartype);
+    name := f.varlink
+  else true do error(constructor3) end
+end
+
+"field_expression_list:
+   field_expression [ ',' field_expression ]*"
+
+proc field_expression_list(typ: int; succ: symbols)
+var name: int; endexpr: symbols
+begin endexpr := symbols(comma1) + exprsym + succ;
+  name := names[typ]:typeattr.subtype1;
+  field_expression(name, endexpr);
+  while sym = comma1 do
+    nextsym; field_expression(name, endexpr)
+  end;
+  if name <> none do error(constructor3) end
+end
+
+"element_expression_list:
+   expression [ ',' expression ]*"
+
+proc element_expression_list(typ: int; succ: symbols)
+var t: typeattr; exprtype, no, max: int;
+  endexpr: symbols
+begin endexpr := symbols(comma1) + succ;
+  t := names[typ]:typeattr; no := 1;
+  expression(exprtype, endexpr);
+  checktype(exprtype, t.subtype2);
+  while sym = comma1 do
+    nextsym; no := no + 1;
+    expression(exprtype, endexpr);
+    checktype(exprtype, t.subtype2)
+  end;
+  max := t.bound2 - t.bound1 + 1;
+  if (t.subtype2 = char1) and (no < max) do
+    emit2(blank2, max - no); no := max
+  end;
+  if no <> max do error(constructor3) end
+end
+
+"member_expression_list:
+   expression [ ',' expression ]*"
+
+proc member_expression_list(typ: int; succ: symbols)
+var t: typeattr; exprtype, no: int; endexpr: symbols
+begin endexpr := symbols(comma1) + succ;
+  t := names[typ]:typeattr; no := 1;
+  expression(exprtype, endexpr);
+  checktype(exprtype, t.subtype1);
+  while sym = comma1 do
+    nextsym; no := no + 1;
+    expression(exprtype, endexpr);
+    checktype(exprtype, t.subtype1)
+  end;
+  emit2(construct2, no)
+end
+
+"constructor:
+   elementary_constructor # record_constructor #
+   array_constructor # set_constructor
+ elementary_constructor:
+   type_name '(' elementary_expression ')'
+ record_constructor:
+   type_name '(' field_expression_list ')'
+ array_constructor:
+   type_name '(' element_expression_list ')'
+ set constructor:
+   type_name [ '(' member_expression_list ')' ]"
+
+proc constructor(var typ: int; succ: symbols)
+var mode: namekind; endexpr: symbols
+begin "(sym = name1) and (names[x].kind in typekinds)"
+  typ := x; mode := names[x].kind; nextsym;
+  if sym = lparanth1 do
+    nextsym; endexpr := symbols(rparanth1) + succ;
+    if mode = elemtype do
+      elementary_expression(typ, endexpr)
+    else mode = recordtype do
+      field_expression_list(typ, endexpr)
+    else mode = arraytype do
+      element_expression_list(typ, endexpr)
+    else mode = settype do
+      member_expression_list(typ, endexpr)
+    end;
+    checksym(rparanth1, succ)
+  else true do
+    if mode = settype do emit2(construct2, 0)
+    else true do error(constructor3) end
+  end;
+  check(succ)
+end
+
+"function_call:
+   procedure_call"
+
+proc function_call(var typ: int; succ: symbols)
+begin "(sym = name1) and (names[x].kind in prockinds)"
+  if isfunction(x) do
+    typ := names[x]:procattr.proctype;
+    emit2(valspace2, names[typ]:typeattr.length)
+  else true do kinderror2(x, typ) end;
+  procedure_call(succ)
+end
+
+"factor:
+   constant_factor # variable_factor # constructor #
+   function_call # '(' expression ')' #
+   'not' factor # factor type_transfer"
+
+proc factor(var typ: int; succ: symbols)
+var mode: namekind; endfactor: symbols
+begin endfactor := symbols(colon1) + succ;
+  if sym in literalsym do
+    constant_factor(typ, endfactor)
+  else sym = name1 do
+    mode := names[x].kind;
+    if mode = constant do
+      constant_factor(typ, endfactor)
+    else mode in typekinds do
+      constructor(typ, endfactor)
+    else mode in varkinds do
+      variable_factor(typ, endfactor)
+    else mode in prockinds do
+      function_call(typ, endfactor)
+    else true do
+      kinderror2(x, typ); nextsym
+    end
+  else sym = val1 do variable_factor(typ, endfactor)
+  else sym = lparanth1 do
+    nextsym;
+    expression(typ, symbols(rparanth1) + endfactor);
+    checksym(rparanth1, endfactor)
+  else sym = not1 do
+    nextsym; factor(typ, endfactor);
+    if typ = bool1 do emit(not2)
+    else true do typerror2(typ) end
+  else true do
+    typ := univtype1; syntax(endfactor)
+  end;
+  while sym = colon1 do
+    type_transfer(typ, endfactor)
+  end;
+  check(succ)
+end
+
+"term:
+   factor [ multiplying_operator factor ]*"
+
+proc term(var typ: int; succ: symbols)
+var op: symbol; typ2: int; endfactor: symbols
+begin endfactor := multsym + succ;
+  factor(typ, endfactor);
+  while sym in multsym do
+    op := sym; nextsym; factor(typ2, endfactor);
+    if typ = int1 do
+      checktype(typ, typ2);
+      if op = asterisk1 do emit(multiply2)
+      else op = div1 do emit(divide2)
+      else op = mod1 do emit(modulo2)
+      else true do typerror2(typ) end
+    else typ = bool1 do
+      checktype(typ, typ2);
+      if op = and1 do emit(and2)
+      else true do typerror2(typ) end
+    else names[typ].kind = settype do
+      checktype(typ, typ2);
+      if op = asterisk1 do emit(intersection2)
+      else true do typerror2(typ) end
+    else true do typerror2(typ) end
+  end;
+  check(succ)
+end
+
+"signed_term:
+   [ sign_operator ] term"
+
+proc signed_term(var typ: int; succ: symbols)
+var op: symbol
+begin
+  if sym in signsym do
+    op := sym; nextsym; term(typ, succ);
+    if typ = int1 do
+      if op = plus1 do skip
+      else op = minus1 do emit(minus2) end
+    else true do typerror2(typ) end
+  else true do term(typ, succ) end
+end
+
+"simple_expression:
+   signed_term [ adding_operator term ]*"
+
+proc simple_expression(var typ: int; succ: symbols)
+var op: symbol; typ2: int; endterm: symbols
+begin endterm := addsym + succ;
+  signed_term(typ, endterm);
+  while sym in addsym do
+    op := sym; nextsym; term(typ2, endterm);
+    if typ = int1 do
+      checktype(typ, typ2);
+      if op = plus1 do emit(add2)
+      else op = minus1 do emit(subtract2)
+      else true do typerror2(typ) end
+    else typ = bool1 do
+      checktype(typ, typ2);
+      if op = or1 do emit(or2)
+      else true do typerror2(typ) end
+    else names[typ].kind = settype do
+      checktype(typ, typ2);
+      if op = plus1 do emit(union2)
+      else op = minus1 do emit(difference2)
+      else true do typerror2(typ) end
+    else true do typerror2(typ) end
+  end;
+  check(succ)
+end
+
+"expression:
+   simple_expression
+   [ relational_operator simple_expression ]"
+
+post proc expression(var typ: int; succ: symbols)
+var op: symbol; typ2: int; t: typeattr;
+  endsimple: symbols
+begin endsimple := relationsym + succ;
+  simple_expression(typ, endsimple);
+  if sym in relationsym do
+    op := sym; nextsym;
+    simple_expression(typ2, succ);
+    t := names[typ2]:typeattr;
+    if op in equalitysym do
+      checktype(typ, typ2);
+      if op = equal1 do emit2(equal2, t.length)
+      else true do emit2(notequal2, t.length) end
+    else op in ordersym do
+      checktype(typ, typ2); checkelem(typ);
+      if op = less1 do emit(less2)
+      else op = greater1 do emit(greater2)
+      else op = notless1 do emit(notless2)
+      else op = notgreater1 do emit(notgreater2) end
+    else op = in1 do
+      if t.typekind = settype do
+        checktype(typ, t.subtype1); emit(in2)
+      else true do typerror2(typ) end
+    end;
+    if typ <> univtype1 do typ := bool1 end
+  end;
+  check(succ)
+end
+
+"assignment_statement:
+   variable_symbol ':=' expression"
+
+proc assignment_statement(succ: symbols)
+var vartype, exprtype: int
+begin
+  variable_symbol(vartype, symbols(becomes1)
+    + exprsym + succ);
+  checksym(becomes1, exprsym + succ);
+  expression(exprtype, succ);
+  checktype(vartype, exprtype);
+  emit2(assign2, names[vartype]:typeattr.length)
+end
+
+"standard_call:
+   'addr' '(' variable_symbol ')' #
+   'halt' #
+   'obtain' '(' expression ',' variable_symbol ')' #
+   'place' '(' expression ',' expression ')' #
+   'sense' '(' expression ',' expression ')'"
+
+proc standard_call(succ: symbols)
+var endarg1, endarg2: symbols; typ: int
+begin "(sym = name1) and (names[x].kind = standard)"
+  endarg2 := symbols(rparanth1) + succ;
+  endarg1 := symbols(comma1) + endarg2;
+  if x = addr1 do
+    nextsym; checksym(lparanth1, endarg2);
+    variable_symbol(typ, endarg2);
+    checksym(rparanth1, succ); emit(addr2)
+  else x = halt1 do
+    nextsym; emit(halt2)
+  else x = obtain1 do
+    nextsym; checksym(lparanth1, endarg1);
+    expression(typ, endarg1); checktype(typ, int1);
+    checksym(comma1, endarg2);
+    variable_symbol(typ, endarg2); checktype(typ, int1);
+    checksym(rparanth1, succ); emit(obtain2)
+  else x = place1 do
+    nextsym; checksym(lparanth1, endarg1);
+    expression(typ, endarg1); checktype(typ, int1);
+    checksym(comma1, endarg2);
+    expression(typ, endarg2); checktype(typ, int1);
+    checksym(rparanth1, succ); emit(place2)
+  else x = sense1 do
+    nextsym; checksym(lparanth1, endarg1);
+    expression(typ, endarg1); checktype(typ, int1);
+    checksym(comma1, endarg2);
+    expression(typ, endarg2); checktype(typ, int1);
+    checksym(rparanth1, succ); emit(sense2)
+  end
+end
+
+"procedure_argument:
+   procedure_name"
+
+proc procedure_argument(succ: symbols)
+var length: int; p: procattr
+begin
+  if sym = name1 do
+    if names[x].kind in prockinds do
+      p := names[x]:procattr;
+      if p.prockind = standard do kinderror1(x)
+      else p.prockind = procedur do
+        emit3(procarg2, p.proclevel, p.procaddr)
+      else p.prockind = procparam do
+        emit3(paramarg2, p.proclevel, p.procaddr)
+      end
+    else true do kinderror1(x) end;
+    nextsym
+  else true do syntax(succ) end;
+  check(succ)
+end
+
+"argument:
+   expression # variable_symbol # procedure_argument"
+
+proc argument(var param, size: int; succ: symbols)
+var typ: int; n: nameattr
+begin
+  if param <> none do
+    n := names[param];
+    if n.kind = valparam do
+      expression(typ, succ);
+      checktype(typ, n:varattr.vartype);
+      size := names[typ]:typeattr.length
+    else n.kind = varparam do
+      variable_symbol(typ, succ);
+      checktype(typ, n:varattr.vartype);
+      size := elemlength
+    else n.kind = procparam do
+      procedure_argument(succ);
+      size := proclength
+    end;
+    param := n.link
+  else true do
+    expression(typ, succ); size := 0;
+    error(call3)
+  end
+end
+
+"argument_list:
+   argument [ ',' argument ]*"
+
+proc argument_list(name: int; var length: int;
+  succ: symbols)
+var par, length2: int; endarg: symbols
+begin endarg := symbols(comma1) + succ;
+  par := names[name]:procattr.param;
+  argument(par, length, endarg);
+  while sym = comma1 do
+    nextsym; argument(par, length2, endarg);
+    length := length + length2
+  end;
+  if par <> none do error(call3) end;
+  check(succ)
+end
+
+"procedure_call:
+   standard_call #
+   procedure_name [ '(' argument_list ')' ]"
+
+post proc procedure_call(succ: symbols)
+var name, length: int; p: procattr
+begin "(sym = name1) and (names[x].kind in prockinds)"
+  name := x; p := names[x]:procattr;
+  if p.prockind = standard do standard_call(succ)
+  else true do
+    nextsym;
+    if sym = lparanth1 do
+      nextsym;
+      argument_list(name, length, symbols(rparanth1)
+        + succ);
+      checksym(rparanth1, succ)
+    else true do
+      if p.param <> none do error(call3) end;
+      length := 0
+    end;
+    if p.prockind = procedur do
+      emit4(proccall2, p.proclevel, p.procaddr, length)
+    else p.prockind = procparam do
+      emit4(paramcall2, p.proclevel, p.procaddr, length)
+    end
+  end
+end
+
+"conditional_statement:
+   expression 'do' statement_list"
+
+proc conditional_statement(truelabel: int; succ: symbols)
+var typ, falselabel: int; enddo: symbols
+begin enddo := statsym + succ;
+  expression(typ, symbols(do1) + enddo);
+  if typ <> bool1 do typerror2(typ) end;
+  newlabel(falselabel);
+  checksym(do1, enddo);
+  emit2(do2, falselabel);
+  statement_list(succ);
+  emit3(else2, truelabel, falselabel);
+  check(succ)
+end
+
+"conditional_statement_list:
+   conditional_statement
+   [ 'else' conditional_statement ]*"
+
+proc conditional_statement_list(truelabel: int;
+  succ: symbols)
+var endstat: symbols
+begin endstat := symbols(else1) + succ;
+  conditional_statement(truelabel, endstat);
+  while sym = else1 do
+    nextsym;
+    conditional_statement(truelabel, endstat)
+  end;
+  check(succ)
+end
+
+"if_statement:
+   'if' conditional_statement_list 'end'"
+
+proc if_statement(succ: symbols)
+var truelabel: int
+begin "sym = if1" nextsym; newlabel(truelabel);
+  conditional_statement_list(truelabel, symbols(end1)
+    + succ);
+  checksym(end1, succ);
+  emit2(endif2, truelabel)
+end
+
+"while_statement:
+   'while' conditional_statement_list 'end'"
+
+proc while_statement(succ: symbols)
+var truelabel: int
+begin "sym = while1" nextsym; newlabel(truelabel);
+  emit2(while2, truelabel);
+  conditional_statement_list(truelabel, symbols(end1)
+    + succ);
+  checksym(end1, succ)
+end
+
+"when_statement:
+   'when' conditional_statement_list 'end'"
+
+proc when_statement(succ: symbols)
+var waitlabel, truelabel: int
+begin "sym = when1" nextsym; newlabel(waitlabel);
+  emit2(when2, waitlabel); newlabel(truelabel);
+  conditional_statement_list(truelabel, symbols(end1)
+    + succ);
+  emit2(wait2, waitlabel);
+  checksym(end1, succ);
+  emit2(endwhen2, truelabel)
+end
+
+"process_statement:
+   constant_symbol 'do' statement_list"
+
+proc process_statement(endlabel: int;
+  var p: processattr; succ: symbols)
+var typ, procconst, proclabel, templabel: int;
+  enddo: symbols
+begin enddo := statsym + succ;
+  constant_symbol(typ, procconst, symbols(do1) + enddo);
+  if (procconst < 0) or (procconst > setlimit) do
+    error(cobegin3); procconst := 1
+  end;
+  newlabel(proclabel); newlabel(templabel);
+  checksym(do1, enddo);
+  emit3(process2, proclabel, templabel);
+  statement_list(succ);
+  emit3(also2, endlabel, templabel);
+  p := processattr(procconst, proclabel);
+  check(succ)
+end
+
+"process_statement_list:
+   process_statement [ 'also' process_statement ]*"
+
+proc process_statement_list(endlabel: int;
+  var tasks: processtable; var count: int;
+  succ: symbols)
+var used: processset; p: processattr; endstat: symbols
+begin endstat := symbols(also1) + succ;
+  process_statement(endlabel, p, endstat);
+  used := processset(p.procconst);
+  count := 1; tasks[1] := p;
+  while sym = also1 do
+    nextsym;
+    process_statement(endlabel, p, endstat);
+    if p.procconst in used do error(cobegin3)
+    else true do
+      used := used + processset(p.procconst);
+      if count = maxprocess do
+        fail(processlimit)
+      end;
+      count := count + 1; tasks[count] := p
+    end
+  end;
+  check(succ)
+end
+
+"concurrent_statement:
+   'cobegin' process_statement_list 'end'"
+
+proc concurrent_statement(succ: symbols)
+var beginlabel, endlabel, count, i: int;
+  tasks: processtable
+begin "sym = cobegin1" nextsym;
+  newlabel(beginlabel); newlabel(endlabel);
+  emit2(goto2, beginlabel);
+  process_statement_list(endlabel, tasks, count,
+    symbols(end1) + succ);
+  checksym(end1, succ);
+  emit4(cobegin2, beginlabel, endlabel, count);
+  i := 0;
+  while i < count do
+    i := i + 1; emit(operator(tasks[i].procconst));
+    emit(operator(tasks[i].proclabel))
+  end
+end
+
+"statement:
+   'skip' # assignment_statement # procedure_call #
+   if_statement # while_statement #
+   when_statement # concurrent_statement"
+
+proc statement(succ: symbols)
+begin
+  if sym = skip1 do nextsym
+  else sym = val1 do assignment_statement(succ)
+  else sym = name1 do
+    if names[x].kind in prockinds do
+      if isfunction(x) do kinderror1(x)
+      else true do procedure_call(succ) end
+    else true do assignment_statement(succ) end
+  else sym = if1 do if_statement(succ)
+  else sym = while1 do while_statement(succ)
+  else sym = when1 do when_statement(succ)
+  else sym = cobegin1 do concurrent_statement(succ)
+  else true do syntax(succ) end;
+  check(succ)
+end
+
+"statement_list
+   statement [ ';' statement ]*"
+
+post proc statement_list(succ: symbols)
+var semistat, endstat: symbols
+begin semistat := symbols(semicolon1) + statsym;
+  endstat := semistat + succ;
+  statement(endstat);
+  while sym in semistat do
+    checksym(semicolon1, statsym);
+    statement(endstat)
+  end;
+  check(succ)
+end
+
+"program:
+   [ initial_declaration ]* complete_procedure
+ initial_declaration:
+   constant_declaration_list # type_declaration"
+
+proc programx(succ: symbols)
+var enddecl: symbols
+begin standard_names;
+  enddecl := initdeclsym + symbols(proc1) + succ;
+  while sym in initdeclsym do
+    if sym = const1 do
+      constant_declaration_list(enddecl)
+    else sym in typesym do
+      type_declaration(enddecl)
+    end
+  end;
+  complete_procedure(false, 0, succ);
+  check(succ)
+end
+
+begin programx(symbols(endtext1));
+  emit(endcode2)
+end

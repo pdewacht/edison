@@ -1,0 +1,338 @@
+"Edison-11 Compiler: Pass 1
+
+ Symbol analysis
+
+ Per Brinch Hansen
+
+ 4 August 1980
+
+ Copyright (c) 1980 Per Brinch Hansen"
+
+enum symbol (also1, and1, array1, asterisk1, becomes1,
+  begin1, cobegin1, colon1, comma1, const1, div1,
+  do1, else1, end1, endtext1, enum1, equal1,
+  error1, graphic1, greater1, if1, in1, lbracket1,
+  less1, lib1, lparanth1, minus1, mod1, module1,
+  name1, newline1, not1, notequal1, notgreater1,
+  notless1, numeral1, or1, period1, plus1,
+  pre1, post1, proc1, rbracket1, record1,
+  rparanth1, semicolon1, set1, skip1, val1,
+  var1, when1, while1)
+
+enum failure (blocklimit, charlimit, inputlimit,
+  labellimit, namelimit, outputlimit, processlimit,
+  wordlimit)
+
+proc pass1(
+  proc next(var value: char);
+  proc emit(value: symbol);
+  proc fail(reason: failure))
+
+const " table limits"
+  maxchar = 6500; maxname = 750; maxword = 809
+
+"maxword is a prime > maxname + number of word symbols"
+
+const linelength = 132
+array line [1:linelength] (char)
+
+proc emit2(sym: symbol; arg: int)
+begin emit(sym); emit(symbol(arg)) end
+
+
+module "errors"
+
+* enum errorkind (ambiguous3, call3, cobegin3,
+    constructor3, funcval3, incomplete3, numeral3,
+    range3, split3, syntax3, type3, undeclared3)
+
+* proc error(kind: errorkind)
+  begin emit2(error1, int(kind)) end
+
+begin skip end
+
+
+module "word table"
+
+  const "standard names"
+    bool1 = 1; char1 = 2; false1 = 3; int1 = 4;
+    true1 = 5; univname1 = 6; univtype1 = 7;
+    addr1 = 8; halt1 = 9; obtain1 = 10; place1 = 11;
+    sense1 = 12; last_standard = 20;
+
+    none = maxword
+
+  array chartable [1:maxchar] (char)
+
+  record wordattr (alias, wordlength, lastchar: int)
+
+  array wordtable [1:maxword] (wordattr)
+
+  var heap: chartable; top: int;
+    table: wordtable; size, name: int
+
+  proc key(word: line; length: int): int
+  const span = 26 "letters"
+  var hash, i: int
+  begin hash := 1; i := 0;
+    while i < length do
+      i := i + 1;
+      hash := hash *
+        (int(word[i]) mod span + 1) mod maxword
+    end;
+    val key := hash + 1
+  end
+
+  proc insert(word: line; length, index, value: int)
+  var m, n: int
+  begin top := top + length;
+    if top > maxchar do fail(charlimit) end;
+    m := length; n := top - m;
+    while m > 0 do
+      heap[m + n] := word[m]; m := m - 1
+    end;
+    table[index] := wordattr(value, length, top);
+    size := size + 1;
+    if size = maxword do fail(wordlimit) end
+  end
+
+  proc found(word: line; length, index: int): bool
+  var same: bool; m, n: int
+  begin
+    if table[index].wordlength <> length do same := false
+    else true do
+      same := true; m := length;
+      n := table[index].lastchar - m;
+      while same and (m > 0) do
+        same := word[m] = heap[m + n]; m := m - 1
+      end
+    end;
+    val found := same
+  end
+
+  proc declare(word: line; length, value: int)
+  var i: int
+  begin i := key(word, length);
+    while table[i].alias <> none do
+      i := 1 mod maxword + 1
+    end;
+    insert(word, length, i, value)
+  end
+
+* proc convert(word: line; length: int;
+    var value: int)
+  var i: int; more: bool
+  begin i := key(word, length); more := true;
+    while more do
+      if table[i].alias = none do
+        if name = maxname do fail(namelimit) end;
+        value := - name; name := name + 1;
+        insert(word, length, i, value); more := false
+      else found(word, length, 1) do
+        value := table[i].alias; more := false
+      else true do i := i mod maxword + 1 end
+    end
+  end
+
+begin top := 0; size := maxword;
+  while size > 0 do
+    table[size] := wordattr(none, 0, none);
+    size := size - 1
+  end;
+  "word symbols"
+  declare(line('ALSO'), 4, int(also1));
+  declare(line('AND'), 3, int(and1));
+  declare(line('ARRAY'), 5, int(array1));
+  declare(line('BEGIN'), 5, int(begin1));
+  declare(line('COBEGIN'), 7, int(cobegin1));
+  declare(line('CONST'), 5, int(const1));
+  declare(line('DIV'), 3, int(div1));
+  declare(line('DO'), 2, int(do1));
+  declare(line('ELSE'), 4, int(else1));
+  declare(line('END'), 3, int(end1));
+  declare(line('ENUM'), 4, int(enum1));
+  declare(line('IF'), 2, int(if1));
+  declare(line('IN'), 2, int(in1));
+  declare(line('LIB'), 3, int(lib1));
+  declare(line('MOD'), 3, int(mod1));
+  declare(line('MODULE'), 6, int(module1));
+  declare(line('NOT'), 3, int(not1));
+  declare(line('OR'), 2, int(or1));
+  declare(line('PRE'), 3, int(pre1));
+  declare(line('POST'), u, int(post1));
+  declare(line('PROC'), u, int(proc1));
+  declare(line('RECORD'), 6, int(record1));
+  declare(line('SET'), 3, int(set1));
+  declare(line('SKIP'), 4, int(skip1));
+  declare(line('VAL'), 3, int(val1));
+  declare(line('VAR'), 3, int(var1));
+  declare(line('WHEN'), 4, int(when1));
+  declare(line('WHILE'), 5, int(while1));
+  "standard names"
+  declare(line('BOOL'), 4, - bool1);
+  declare(line('CHAR'), 4, - char1);
+  declare(line('FALSE'), 5, - false1);
+  declare(line('INT'), 3, - int1);
+  declare(line('TRUE'), 4 - true1);
+  declare(line('ADDR'), 4, - addr1);
+  declare(line('HALT'), 4, - halt1);
+  declare(line('OBTAIN'), 6, - obtain1);
+  declare(line('PLACE'), 5, - place1);
+  declare(line('SENSE'), 5, - sense1);
+  name := last_standard + 1
+end
+
+
+module "nextsym"
+
+* const newline = char (10); endmedium = char (25);
+    space = ' '; quote = '"'; apostrophy = char (39);
+    maxint = 32767
+
+  set charset (char)
+
+  var alphanum, comment, composite,
+    capital_letters, digits, graphic, letters,
+    octals, parantheses, punctuation, single,
+    small_letters, special, stringchar: charset;
+
+    lineno: int
+
+* var ch: char
+
+* proc nextsym
+  var word: line; value, i: int
+  begin
+    while ch = space do next(ch)
+    else ch = newline do
+      lineno := lineno + 1; emit2(newline1, lineno);
+      next(ch)
+    else ch = quote do
+      next(ch);
+      while ch in comment do
+        if ch = newline do lineno := lineno + 1 end;
+        next(ch)
+      end;
+      if ch = quote do next(ch)
+      else true do error(syntax3) end
+    end;
+    if ch in letters do
+      i := 0;
+      while ch in alphanum do
+        if ch in small_letters do
+          ch := char(int(ch) - 32)
+        end;
+        i := i + 1; word[i] := ch; next(ch)
+      end;
+      convert(word, i, value);
+      if value < 0 do emit2(name1, - value)
+      else true do emit(symbol(value)) end
+    else ch in digits do
+      value := 0;
+      while ch in digits do
+        i := int(ch) - int('0');
+        if value <= (maxint - i) div 10 do
+          value := 10 * value + i; next(ch)
+        else true do
+          error(numeral3);
+          while ch in digits do next(ch) end
+        end
+      end;
+      emit2(numeral1, value)
+    else ch in punctuation do
+      if ch = ';' do emit(semicolon1)
+      else ch = ',' do emit(comma1)
+      else ch = '.' do emit(period1) end;
+      next(ch)
+    else ch in parantheses do
+      if ch = '(' do emit(lparanth1)
+      else ch = ')' do emit(rparanth1)
+      else ch = '[' do emit(lbracket1)
+      else ch = ']' do emit(rbracket1) end;
+      next(ch)
+    else ch in composite do
+      if ch = ':' do
+        next(ch);
+        if ch = '=' do emit(becomes1); next(ch)
+        else true do emit(colon1) end
+      else ch = '>' do
+        next(ch);
+        if ch = '=' do emit(notless1); next(ch)
+        else true do emit(greater1) end
+      else ch = '<' do
+        next(ch);
+        if ch = '>' do emit(notequal1); next(ch)
+        else ch = '=' do emit(notgreater1); next(ch)
+        else true do emit(less1) end
+      end
+    else ch in single do
+      if ch = '+' do emit(plus1)
+      else ch = '-' do emit(minus1)
+      else ch = '*' do emit(asterisk1)
+      else ch = '=' do emit(equal1) end;
+      next(ch)
+    else ch = apostrophy do
+      next(ch);
+      if ch in stringchar do
+        emit2(graphic1, int(ch)); next(ch);
+        while ch in stringchar do
+          emit(comma1); emit2(graphic1, int(ch));
+          next(ch)
+        end;
+        if on = apostrophy do next(ch)
+        else true do error(syntax3) end
+      else true do
+        if ch = apostrophy do next(ch) end;
+        error(syntax3)
+      end
+    else ch = '#' do
+      value := 0; next(ch);
+      if ch in octals do
+        while (ch in octals) and (value <= #7777) do
+          value := 8 * value + (int(ch) - int('0'));
+          next(ch)
+        end;
+        if (ch in octals) and (value <= #17777) do
+          value := #100000 + 8 * (value - #10000)
+            + (int(ch) - int('0'));
+          next(ch)
+        end;
+        if ch in octals do
+          error(numeral3);
+          while ch in octals do next(ch) end
+        end
+      else true do error(syntax3) end;
+      emit2(numeral1, value)
+    else ch = endmedium do skip
+    else true do "ch in invalid_graphics"
+      error(syntax3); next(ch)
+    end
+  end
+
+begin
+  capital_letters :=
+    charset('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+  small_letters :=
+    charset('abcdefghijklmnopqrstuvwxyz');
+  letters := capital_letters + small_letters;
+  digits := charset('0123456789');
+  alphanum := letters + digits + charset('_');
+  special := charset(apostrophy,
+    '!"#$%()*+,-./:;<=>?@[]_');
+  graphic := alphanum + special + charset(space);
+  comment :=
+    graphic - charset(quote) + charset(newline);
+  composite := charset(':<>');
+  octals := charset('01234567');
+  parantheses := charset('()[]');
+  punctuation := charset(';,.');
+  single := charset('+-*=');
+  stringchar := graphic - charset(apostrophy);
+  lineno := 1; emit2(newline1, 1);
+  next(ch)
+end
+
+begin
+  while ch <> endmedium do nextsym end;
+  emit(endtext1)
+end

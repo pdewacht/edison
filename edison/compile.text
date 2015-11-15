@@ -1,0 +1,311 @@
+const nl = char (10); sp = ' ';
+  linelength = 80 "characters";
+  namelength = 12 "characters";
+  sectorlength = 64 "integers"
+set charset (char)
+array line [1:linelength] (char)
+array name [1:namelength] (char)
+array sector [1:sectorlength] (int)
+record position (pages, words: int)
+enum word (sixteen_bits)
+array program [1:12300] (word)
+array stream [1:536] (word)
+
+proc prefix(
+  progname: name;
+  pdp11: bool;
+  maxrow, maxcolumn: int;
+  proc select(normal: bool);
+  proc cursor(row, column: int);
+  proc erase;
+  proc display(value: char);
+  proc assume(condition: bool; text: line);
+  proc accept(var value: char);
+  proc pause;
+  proc print(value: char);
+  proc openread(var file: stream; title: name);
+  proc more(var file: stream): bool;
+  proc read(var file: stream; var value: char);
+  proc mark(var file: stream): position;
+  proc move(var file: stream; place: position);
+  proc endread(var file: stream);
+  proc openwrite(var file: stream; title: name);
+  proc write(var file: stream; value: char);
+  proc endwrite(var file: stream);
+  proc create(drive: int; title: name);
+  proc delete(drive: int; title: name);
+  proc locate(var drive: int; title: name);
+  proc rename(drive: int; old, new: name);
+  proc protect(drive: int; title: name; value: bool);
+  proc readbool(proc read(var c: char); var value: bool);
+  proc readint(proc read(var c: char); var value: int);
+  proc readname(proc read(var c: char); var value: name);
+  proc writebool(proc write(d: char); value: bool);
+  proc writeint(proc write(c: char); value, length: int);
+  proc writename(proc write(c: char); value: name);
+  proc writeline(proc write(c: char); value: line);
+  proc readsector(drive, sectorno: int;
+    var value: sector);
+  proc writesector(drive, sectorno: int; value: sector);
+  proc subset(first, last: char): charset;
+  proc load(title: name): program)
+
+"The Edison system: Edison compiler
+            14 July 1981
+ Copyright (c) 1981 Per Brinch Hansen"
+
+module "failure"
+
+* enum failure (blocklimit, charlimit, inputlimit,
+    labellimit, namelimit, processlimit, wordlimit)
+
+* proc fail(reason: failure)
+  var text: line
+  begin
+    if reason = blocklimit do text := line('block.')
+    else reason = charlimit do text := line('char.')
+    else reason = inputlimit do text := line('input.')
+    else reason = labellimit do text := line('label.')
+    else reason = namelimit do text := line('name.')
+    else reason = processlimit do text := line('process.')
+    else reason = wordlimit do text := line('word.') end;
+    display(nl); writeline(display, text);
+    writeline(display, line(' limit.')); halt
+  end
+
+begin skip end
+
+
+module "note output"
+
+  const notedrive = 0
+
+  var notes: name; file: stream
+
+  proc print(c: char)
+  begin write(file, c) end
+
+* enum errorkind (ambiguous, call, cobeginx, constructor,
+    funcval, incomplete, numeral, range, splitx, syntax,
+    type, undeclared)
+
+* var errors: bool
+
+* proc noteerror(lineno: int; kind: errorkind)
+  var text: line
+  begin
+    if kind = ambiguous do
+      text := line('ambiguous name.')
+    else kind = call do
+      text := line('invalid procedure call.')
+    else kind = cobeginx do
+      text := line('invalid concurrent statement.')
+    else kind = constructor do
+      text := line('invalid constructor.')
+    else kind = funcval do
+      text := line('invalid use of function variable.')
+    else kind = incomplete do
+      text := line('invalid recursive use of name.')
+    else kind = numeral do
+      text := line('numeral out of range.')
+    else kind = range do
+      text := line('invalid range.')
+    else kind = splitx do
+      text := line('invalid split procedure.')
+    else kind = syntax do
+      text := line('invalid syntax.')
+    else kind = type do
+      text := line('invalid type.')
+    else kind = undeclared do
+      text := line('undeclared name.')
+    end;
+    writeline(print, line('line .'));
+    writeint(print, lineno, 4); print(sp);
+    writeline(print, text); print(nl);
+    errors := true
+  end
+
+* proc notesums(title: name; sum1, sum2: int)
+  begin writename(print, title);
+    writeline(print, line(' check sums = .'));
+    writeint(print, sum1, 7);
+    writeint(print, sum2, 7);
+    print(nl); print(nl)
+  end
+
+* proc endnotes(errors, summed: bool)
+  begin endwrite(file);
+    if errors do
+      writeline(display, line(
+        'compilation errors (see notes on disk)', nl))
+    else summed do
+      writeline(display, line(
+        'check sums ready (see notes on disk)', nl))
+    else true do delete(notedrive, notes) end
+  end
+
+begin notes := name('notes'); create(notedrive, notes);
+  openwrite(file, notes); errors := false
+end
+
+
+module "text input"
+
+  const em = char (25)
+
+  var invisible: charset
+
+* var text: name; textdrive: int; input: stream
+
+* proc nextchar(var ch: char)
+  begin
+    if more(input) do
+      read(input, ch);
+      while ch in invisible do read(input, ch) end
+      "display(ch)"
+    else true do ch := em end
+  end
+
+* proc endtext
+  begin endread(input) end
+
+begin writeline(display, line('  Text name = .'));
+  readname(accept, text); locate(textdrive, text);
+  invisible := subset(char(0), char(31)) -
+    charset(nl) + charset(char(127));
+  openread(input, text)
+end
+
+
+module "code output"
+* var code: name; codedrive: int
+
+* proc endcode(temp: name; errors: bool)
+  begin
+    if errors do delete(codedrive, temp)
+    else true do rename(codedrive, temp, code) end
+  end
+
+begin writeline(display, line('  Code name = .'));
+  readname(accept, code);
+  writeline(display, line('  Code drive = .'));
+  readint(accept, codedrive);
+  delete(codedrive, code)
+end
+
+
+module "symbol input"
+
+  var temp: name; pass: char; start: position
+
+* proc openin(title: name; scan: char)
+  begin openread(input, title); temp := title;
+    pass := scan; start := mark(input)
+  end
+
+* proc next(var value: int)
+  begin read(input, value:char) "display(pass);
+    writeint(display, value, 7); display(nl)"
+  end
+
+* proc rewind(scan: char)
+  begin move(input, start); pass := scan end
+
+* proc endin
+  var drive: int
+  begin endread(input); locate(drive, temp);
+    delete(drive, temp)
+  end
+
+begin skip end
+
+
+module "symbol output"
+
+  const n = 8191
+
+  var output: stream; copied: bool;
+    sum1, sum2: int
+
+* var summed: bool
+
+* proc openout(drive: int; title: name; normal: bool)
+  begin create(drive, title); openwrite(output, title);
+    copied := normal
+  end
+
+* proc emit(value: int)
+  begin
+    if copied do write(output, char(value)) end;
+    if summed do
+      sum1 := (sum1 + value mod n) mod n;
+      sum2 := (sum2 + sum1) mod n
+    end
+  end
+
+* proc reopen
+  begin copied := true;
+    if summed do notesums(text, sum1, sum2) end
+  end
+
+* proc endout
+  begin endwrite(output);
+    if summed do notesums(text, sum1, sum2) end
+  end
+
+begin
+  writeline(display, line('  Compute check sums? .'));
+  readbool(accept, summed); sum1 := 0; sum2 := 0
+end
+
+
+module "compiler passes"
+
+* lib proc pass1(
+    proc next(var value: char);
+    proc emit(value: int);
+    proc fail(reason: failure))
+  [ load(name('edison1')) ]
+
+* lib proc pass2(
+    proc next(var value: int);
+    proc emit(value: int);
+    proc fail(reason: failure))
+  [ load(name('edison2')) ]
+
+* lib proc pass3(
+    proc next(var value: int);
+    proc emit(value: int);
+    proc fail(reason: failure))
+  [ load(name('edison3')) ]
+
+* lib proc pass4(trim: bool;
+    proc next(var value: int);
+    proc emit(value: int);
+    proc report(lineno: int; error: errorkind);
+    proc rerun;
+    proc fail(reason: failure))
+  [ load(name('edison4')) ]
+
+* proc rerun
+  begin rewind('5'); reopen end
+
+begin skip end
+
+
+const trim = true
+
+var temp1, temp2: name; drive1, drive2: int
+begin temp1 := name('temp1'); temp2 := name('temp2');
+  drive1 := 1 - textdrive; drive2 := textdrive;
+  openout(drive1, temp1, true);
+  pass1(nextchar, emit, fail); endtext; endout;
+  openin(temp1, '2'); openout(drive2, temp2, true);
+  pass2(next, emit, fail); endin; endout;
+  openin(temp2, '3'); openout(drive1, temp1, true);
+  pass3(next, emit, fail); endin; endout;
+  openin(temp1, '4'); openout(codedrive, temp2, false);
+  pass4(trim, next, emit, noteerror, rerun, fail);
+  endin; endout; endnotes(errors, summed);
+  endcode(temp2, errors)
+end

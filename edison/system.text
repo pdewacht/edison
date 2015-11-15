@@ -1,0 +1,1181 @@
+"The Edison operating system
+           14 July 1981
+ Copyright (c) 1981 Per Brinch Hansen"
+
+array sector [1:64] (int)
+
+proc system(
+  pdp11: bool;
+  maxrow, maxcolumn: int;
+  proc cursor(row, column: int);
+  proc erase;
+  proc display(value: char);
+  proc accept(var value: char);
+  proc print(value: char);
+  proc read_sector(drive, sectorno: int;
+    var value: sector);
+  proc write_sector(drive, sectorno: int;
+    value: sector))
+
+const nl = char (10); sp = ' '
+
+module "character sets"
+
+* set charset (char)
+
+* var capitals, comment: charset
+
+* proc subset(first, last: char): charset
+  var c: char; value: charset
+  begin c := first; value := charset;
+    while c <= last do
+      value := value + charset(c);
+      c := char(int(c) + 1)
+    end;
+    val subset := value
+  end
+
+* proc lowercase(c: char): char
+  begin
+    if c in capitals do
+      c := char(int(c) + 32)
+    end;
+    val lowercase := c
+  end
+
+begin capitals := subset('A', 'Z');
+  comment := charset(nl, sp)
+end
+
+
+module "integers"
+
+* const minint = #100000; maxint = 32767
+
+  var signs, digits, numeric: charset
+
+* proc read_int(proc read(var c: char);
+    var value: int)
+  var c: char; plus: bool; digit: int
+  begin value := 0; read(c);
+    while c in comment do read(c) end;
+    if c in signs do plus := c = '+'; read(c)
+    else true do plus := true end;
+    while c in digits do
+      digit := int(c) - int('0');
+      if value >= (minint + digit) div 10 do
+        value := 10 * value - digit
+      end;
+      read(c)
+    end;
+    if plus and (value > minint) do
+      value := - value
+    end
+  end
+
+* proc write_int(proc write(c: char); value, length: int)
+  const max = 6
+  array numeral [1:max] (char)
+  var no: numeral; min, i: int; negative: bool
+  begin
+    if value = minint do
+      no := numeral('-32768'); min := max
+    else value = 0 do
+      no[max] := '0'; min := 1
+    else true do
+      if value < 0 do
+        negative := true; value := - value
+      else true do negative := false end;
+      min := 0;
+      while value > 0 do
+        no[max - min] := char(value mod 10 + int('0'));
+        min := min + 1; value := value div 10
+      end;
+      if negative do
+        no[max - min] := '-'; min := min + 1
+      end
+    end;
+    while length > min do
+      write(sp); length := length - 1
+    end;
+    while min > 0 do
+      min := min - 1; write(no[max - min])
+    end
+  end
+
+begin signs := charset('+-');
+  digits := subset('0', '9')
+end
+
+
+module "names"
+
+* const namelength = 12
+* array name [1:namelength] (char)
+
+  var alphanum, letters: charset
+
+* proc read_name(proc read(var c: char);
+    var value: name)
+  var i: int; c: char
+  begin value := name(sp); read(c);
+    while c in comment do read(c) end;
+    if c in letters do
+      i := 1;
+      while (c in alphanum) and (i <= namelength) do
+        c := lowercase(c); value[i] := c;
+        read(c); i := i + 1
+      end
+    end
+  end
+
+* proc write_name(proc write(c: char); value: name)
+  var i: int
+  begin i := 1;
+    while i <= namelength do
+      write(value[i]); i := i + 1
+    end
+  end
+
+* proc less_name(x, y: name): bool
+  var i: int
+  begin i := 1;
+    while (i < namelength) and (x[i] = y[i]) do
+      i := i + 1
+    end;
+    val less_name := x[i] < y[i]
+  end
+
+begin letters := capitals + subset('a', 'z');
+  alphanum := letters + subset('0', '9') + charset('_')
+end
+
+
+module "lines"
+
+* const linelength = 80
+* array line [1:linelength] (char)
+
+  var endline: charset
+
+* proc write_line(proc write(c: char); text: line)
+  var i: int; c: char
+  begin i := 1; c := text[1];
+    while not (c in endline) and (i < linelength) do
+      write(c); i := i + 1; c := text[i]
+    end;
+    if c = nl do write(nl) end
+  end
+
+begin endline := charset(nl, '.') end
+
+
+module "booleans"
+
+* proc read_bool(proc read(var c: char); var value: bool)
+  var word: name
+  begin read_name(read, word);
+    value := (word = name('true')) or
+      (word = name('yes'))
+  end
+
+* proc write_bool(proc write(c: char); value: bool)
+  begin
+    if value do write_line(write, line('true .'))
+    else true do write_line(write, line('false.')) end
+  end
+
+begin skip end
+
+
+module "terminal"
+
+* const bel = char (7); bs = char (8); ht = char (9);
+    lf = char (10); cr = char (13); esc = char (27);
+    del = char (127); right = ht; left = bs;
+    tab = 5 "char"
+
+* array sentence [1:150] (char)
+
+  var normal: bool; graphic: charset;
+    text: line; typed, used: int
+
+* proc write_terminal(value: char)
+  begin
+    if normal and (value = lf) do display(cr) end;
+    display(value)
+  end
+
+* proc writename_terminal(value: name)
+  begin write_name(write_terminal, value) end
+
+* proc writeline_terminal(value: line)
+  begin write_line(write_terminal, value) end
+
+* proc writeint_terminal(value, length: int)
+  begin write_int(write_terminal, value, length) end
+
+* proc writebool_terminal(value: bool)
+  begin write_bool(write_terminal, value) end
+
+* proc writesentence_terminal(value: sentence)
+  var i: int; c: char
+  begin i := 1; c := value[1];
+    while c <> '.' do
+      write_terminal(c); i := i + 1; c := value[i]
+    end
+  end
+
+  proc typeline
+  var i, x, n: int; c: char
+  begin text[1] := nl; n := 1; x := 1; accept(c);
+    while 0 <> cr do
+      if (c = left) and (x > 1) do
+        display(bs); x := x - 1
+      else c = right do
+        i := x;
+        if x + tab < n do x := x + tab
+        else x < n do x := n end;
+        while i < x do display(text[i]); i := i + 1 end
+      else (c = del) and (x < n) do
+        n := n - 1; i := x;
+        while i < n do
+          text[i] := text[i + 1]; display(text[i]);
+          i := i + 1
+        end;
+        text[n] := nl; display(sp); i := n + 1;
+        while i > x do display(bs); i := i - 1 end
+      else (c in graphic) and (n < linelength - 1) do
+        n := n + 1; i := n;
+        while i > x do
+          text[i] := text[i - 1]; i := i - 1
+        end;
+        text[x] := c; x := x + 1;
+        while i < n do
+          display(text[i]); i := i + 1
+        end;
+        while i > x do display(bs); i := i - 1 end
+      end;
+      accept(c)
+    end;
+    write_terminal(nl); typed := n; used := 0
+  end
+
+* proc read_terminal(var value: char)
+  begin
+    if normal do
+      if used = typed do typeline end;
+      used := used + 1; value := text[used]
+    else true do accept(value) end
+  end
+
+* proc readname_terminal(var value: name)
+  begin read_name(read_terminal, value) end
+
+* proc readint_terminal(var value: int)
+  begin read_int(read_terminal, value) end
+
+* proc select_terminal(standard: bool)
+  begin normal := standard; used := typed; display(nl) end
+
+* proc pause_terminal
+  var value: char
+  begin
+    writeline_terminal(
+      line('push RETURN to continue', nl));
+    accept(value)
+  end
+
+begin
+  if linelength < maxcolumn do
+    writeline_terminal(line('line limit.')); halt
+  end;
+  graphic := subset(char(32), char(126));
+  select_terminal(true);
+  writeline_terminal(line('The Edison system', nl))
+end
+
+
+module "failures"
+
+* proc assume1(condition: bool; text: line)
+  begin
+    if not condition do
+      writeline_terminal(text); halt
+    end
+  end
+
+* proc assume2(condition: bool; title: name;
+    text: line)
+  begin
+    if not condition do
+      writename_terminal(title);
+      write_terminal(sp);
+      writeline_terminal(text); halt
+    end
+  end
+
+begin skip end
+
+
+module "disk tracks"
+
+* const tracksectors = 26; firsttrack = 0; lasttrack = 76
+* array track [1:tracksectors] (sector)
+
+* proc read_track(drive, trackno: int; var block: track)
+  var i: int
+  begin i := 1;
+    while i <= tracksectors do
+      read_sector(drive, tracksectors * trackno + i - 1,
+        block[i]);
+      i := i + 1
+    end
+  end
+
+* proc write_track(drive, trackno: int; var block: track)
+  var i: int
+  begin i := 1;
+    while i <= tracksectors do
+      write_sector(drive, tracksectors * trackno + i - 1,
+        block[i]);
+      i := i + 1
+    end
+  end
+
+begin skip end
+
+
+module "disk pages"
+
+* const pagelength = 512; pagesectors = 8
+* array page [1:pagelength] (char)
+  array overlay [1:pagesectors] (sector)
+
+* proc read_page(drive, pageno: int; var block: page)
+  var i: int
+  begin i := 1;
+    while i <= pagesectors do
+      read_sector(drive, pagesectors * pageno + i + 1,
+        block:overlay[i]);
+      i := i + 1
+    end
+  end
+
+* proc write_page(drive, pageno: int; var block: page)
+  var i: int
+  begin i := 1;
+    while i <= pagesectors do
+      write_sector(drive, pagesectors * pageno + i + 1,
+        block:overlay[i]);
+      i := i + 1
+    end
+  end
+
+begin skip end
+
+
+module "disk maps"
+  const diskaddr = "sectorno" 10; disksectors = 4;
+    firstpage = 27; lastpage = 249;
+    available = maxint; endlist = 0
+
+  array table [1:lastpage] (int)
+  array filler [1:5] (int)
+
+* record diskmap (free, next: int; contents: table;
+    unused: filler)
+
+  array overlay [1:disksectors] (sector)
+
+* var allpages: int
+
+* proc new_diskmap(var map: diskmap)
+  var i: int
+  begin i := 1;
+    while i < firstpage do
+      map.contents[i] := endlist; i := i + 1
+    else i <= lastpage do
+      map.contents[i] := available; i := i + 1
+    end;
+    map.free := allpages; map.next := firstpage
+  end
+
+* proc read_diskmap(var map: diskmap; drive: int)
+  var i: int
+  begin i := 1;
+    while i <= disksectors do
+      read_sector(drive, diskaddr + i - 1,
+        map:overlay[i]);
+      i := i + 1
+    end
+  end
+
+* proc write_diskmap(var map: diskmap; drive: int)
+  var i: int
+  begin i := 1;
+    while i <= disksectors do
+      write_sector(drive, diskaddr + i - 1,
+        map:overlay[i]);
+      i := i + 1
+    end
+  end
+
+* proc empty_diskmap(var map: diskmap): int
+  begin val empty_diskmap := endlist end
+
+* proc extend_diskmap(var map: diskmap;
+    var address: int)
+  var elem, succ: int
+  begin assume1(map.free > 0, line('disk limit.'));
+    while map.contents[map.next] <> available do
+      map.next := map.next mod lastpage + 1
+    end;
+    if address = endlist do address := map.next
+    else true do
+      elem := address; succ := map.contents[elem];
+      while succ <> endlist do
+        elem := succ; succ := map.contents[elem]
+      end;
+      map.contents[elem] := map.next
+    end;
+    map.contents[map.next] := endlist;
+    map.free := map.free - 1
+  end
+
+* proc discard_diskmap(var map: diskmap;
+    address: int)
+  var succ: int
+  begin
+    if address <> endlist do
+      while address <> endlist do
+        succ := map.contents[address];
+        map.contents[address] := available;
+        map.free := map.free + 1;
+        address := succ
+      end;
+      map.next := firstpage
+    end
+  end
+
+* proc address_diskmap(var map: diskmap;
+    address, pageno: int): int
+  var succ, p: int
+  begin assume1(address <> endlist, line('file limit.'));
+    succ := map.contents[address]; p := 1;
+    while (p < pageno) and (succ <> endlist) do
+      address := succ; succ := map.contents[address];
+      p := p + 1
+    end;
+    assume1(p = pageno, line(' file limit.'));
+    val address_diskmap := address
+  end
+
+begin allpages := lastpage - firstpage + 1 end
+
+
+record position (pages, words: int)
+
+record attributes (address: int; length: position;
+  protected: bool)
+
+
+module "disk catalogs"
+
+  const diskaddr = "sectorno" 14; disksectors = 12;
+    maxitem = 47
+
+  record item (title: name; attr: attributes)
+  array table [1:maxitem] (item)
+  array filler [1:15] (int)
+
+* record diskcatalog (size: int; contents: table;
+    unused: filler)
+
+  array overlay [1:disksectors] (sector)
+
+  proc locate(var catalog: diskcatalog; key: name;
+    var index: int; var found: bool)
+  begin
+    if catalog.size = 0 do found := false
+    else true do
+      index := 1;
+      while (catalog.contents[index].title <> key) and
+        (index < catalog.size) do index := index + 1
+      end;
+      found := catalog.contents[index].title = key
+    end
+  end
+
+* proc new_diskcatalog(var catalog: diskcatalog)
+  begin catalog.size := 0 end
+
+* proc read_diskcatalog(var catalog: diskcatalog;
+    drive: int)
+  var i: int
+  begin i := 1;
+    while i <= disksectors do
+      read_sector(drive, diskaddr + i - 1,
+        catalog:overlay[i]);
+      i := i + 1
+    end
+  end
+
+* proc write_diskcatalog(var catalog: diskcatalog;
+    drive: int)
+  var i: int
+  begin i := 1;
+    while i <= disksectors do
+      write_sector(drive, diskaddr + i - 1,
+        catalog:overlay[i]);
+      i := i + 1
+    end
+  end
+
+* proc list_diskcatalog(var catalog: diskcatalog;
+    proc write(c: char))
+  var index: int; entry: item; lengthx: position;
+    used: int
+  begin index := 1; used := 0; write(nl);
+    while index <= catalog.size do
+      entry := catalog.contents[index];
+      lengthx := entry.attr.length;
+      write_name(write, entry.title);
+      if entry.attr.protected do
+        write_line(write, line(' protected  .'))
+      else true do
+        write_line(write, line(' unprotected.'))
+      end;
+      write_int(write, lengthx.pages, 4);
+      write_line(write, line(' pages.'));
+      if (0 < lengthx.pages) and
+        (lengthx.pages < 64) do
+        write_int(write, pagelength *
+          (lengthx.pages - 1) + lengthx.words, 7);
+        write_line(write, line(' words.'))
+      end;
+      write(nl); used := used + lengthx.pages;
+      if index mod (maxrow - 5) = 0 do
+        pause_terminal
+      end;
+      index := index + 1
+    end;
+    write(nl); write_int(write, catalog.size, 5);
+    write_line(write, line(' entries', nl));
+    write_int(write, used, 5);
+    write_line(write, line(' pages used', nl));
+    write_int(write, allpages - used, 5);
+    write_line(write, line(' pages available', nl))
+  end
+
+* proc include_diskcatalog(var catalog: diskcatalog;
+    key: name; attr: attributes)
+  var x, y: item; index: int
+  begin
+    assume1(catalog.size < maxitem,
+      line('catalog full.'));
+    x := item(key, attr); index := 1;
+    while index <= catalog.size do
+      y := catalog.contents[index];
+      assume2(x.title <> y.title, key,
+        line(' ambiguous.'));
+      if less_name(x.title, y.title) do
+        catalog.contents[index] := x; x := y
+      end;
+      index := index + 1
+    end;
+    catalog.size := catalog.size + 1;
+    catalog.contents[catalog.size] := x
+  end
+
+* proc search_diskcatalog(var catalog: diskcatalog;
+    key: name; var value: attributes; var found: bool)
+  var index: int
+  begin locate(catalog, key, index, found);
+    if found do value := catalog.contents[index].attr end
+  end
+
+* proc change_diskcatalog(var catalog: diskcatalog;
+    key: name; value: attributes)
+  var index: int; found: bool
+  begin locate(catalog, key, index, found);
+    assume2(found, key, line(' unknown.'));
+    catalog.contents[index].attr := value
+  end
+
+* proc exclude_diskcatalog(var catalog: diskcatalog;
+    key: name)
+  var index: int; found: bool
+  begin locate(catalog, key, index, found);
+    assume2(found, key, line(' unknown.'));
+    while index < catalog.size do
+      catalog.contents[index] :=
+        catalog.contents[index + 1];
+      index := index + 1
+    end;
+    catalog.size := catalog.size - 1
+  end
+
+begin skip end
+
+
+module "disk library"
+
+  array boolpair [0:1] (bool)
+  array mappair [0:1] (diskmap)
+  array catalogpair [0:1] (diskcatalog)
+
+  var original: boolpair; maps: mappair;
+    catalogs: catalogpair
+
+  proc check(drive: int)
+  begin
+    assume1((drive = 0) or (drive = 1),
+      line('drive no invalid.'))
+  end
+
+  proc flushdisk_library(drive: int)
+  begin
+    if original[drive] do
+      write_diskmap(maps[drive], drive);
+      write_diskcatalog(catalogs[drive], drive);
+      original[drive] := false
+    end
+  end
+
+  proc insertnew_library(drive: int)
+  begin
+    new_diskmap(maps[drive]);
+    new_diskcatalog(catalogs[drive]);
+    original[drive] := true
+  end
+
+  proc insertold_library(drive: int)
+  begin
+    read_diskmap(maps[drive], drive);
+    read_diskcatalog(catalogs[drive], drive);
+    original[drive] := false
+  end
+
+* proc flush_library
+  begin flushdisk_library(0);
+    flushdisk_library(1)
+  end
+
+* proc insert_library
+  var c: char
+  begin
+    writesentence_terminal(sentence(nl,
+      'insert two disks and type', nl, nl,
+      's if both disks are standard', nl,
+      '0 if only disk 0 is standard', nl,
+      '1 if only disk 1 is standard', nl,
+      'b if both disks are blank', nl, '.'));
+    accept(c);
+    while not (c in charset('sS01bB')) do
+      accept(c)
+    end;
+    c := lowercase(c);
+    writeline_terminal(line(c, nl));
+    if c = 's' do
+      insertold_library(0); insertold_library(1)
+    else true do
+      pause_terminal;
+      if c = '0' do
+        insertold_library(0); insertnew_library(1)
+      else c = '1' do
+        insertnew_library(0); insertold_library(1)
+      else c = 'b' do
+        insertnew_library(0); insertnew_library(1)
+      end
+    end
+  end
+
+* proc list_library(drive: int; proc write(c: char))
+  begin check(drive);
+    list_diskcatalog(catalogs[drive], write)
+  end
+
+* proc backup_library(drive: int)
+  var block: track; i: int
+  begin check(drive); i := firsttrack;
+    while i <= lasttrack do
+      read_track(drive, i, block);
+      write_track(1 - drive, i, block);
+      i := i + 1
+    end;
+    insertold_library(1 - drive)
+  end
+
+* proc delete_library(drive: int; title: name)
+  var attr: attributes; found: bool
+  begin check(drive);
+    search_diskcatalog(catalogs[drive], title,
+      attr, found);
+    if found do
+      assume2(not attr.protected, title,
+        line(' protected.'));
+      discard_diskmap(maps[drive], attr.address);
+      exclude_diskcatalog(catalogs[drive], title);
+      original[drive] := true
+    end
+  end
+
+* proc create_library(drive: int; title: name)
+  begin check(drive);
+    delete_library(drive, title);
+    include_diskcatalog(catalogs[drive], title,
+      attributes(empty_diskmap(maps[drive]),
+      position(0, 0), false));
+    original[drive] := true
+  end
+
+* proc protect_library(drive: int; title: name;
+    value: bool)
+  var attr: attributes; found: bool
+  begin check(drive);
+    search_diskcatalog(catalogs[drive], title,
+      attr, found);
+    assume2(found, title, line(' unknown.'));
+    attr.protected := value;
+    change_diskcatalog(catalogs[drive], title, attr);
+    original[drive] := true
+  end
+
+* proc rename_library(drive: int; old, new: name)
+  var attr: attributes; found: bool
+  begin check(drive);
+    search_diskcatalog(catalogs[drive], new, attr, found);
+    assume2(not found, new, line(' ambiguous.'));
+    search_diskcatalog(catalogs[drive], old, attr, found);
+    assume2(found, old, line(' unknown.'));
+    assume2(not attr.protected, old, line(' protected.'));
+    exclude_diskcatalog(catalogs[drive], old);
+    include_diskcatalog(catalogs[drive], new, attr);
+    original[drive] := true
+  end
+
+* proc change_library(drive: int; title: name;
+    new: attributes)
+  var old: attributes; found: bool
+  begin check(drive);
+    search_diskcatalog(catalogs[drive], title, old, found);
+    assume2(found, title, line(' unknown.'));
+    assume2(not old.protected, title, line(' protected.'));
+    change_diskcatalog(catalogs[drive], title, new);
+    original[drive] := true
+  end
+
+* proc search_library(var drive: int; title: name;
+    var attr: attributes)
+  var found: bool
+  begin drive := 0;
+    search_diskcatalog(catalogs[0], title, attr, found);
+    if not found do
+      drive := 1;
+      search_diskcatalog(catalogs[1], title, attr, found)
+    end;
+    assume2(found, title, line(' unknown.'))
+  end
+
+* proc locate_library(var drive: int; title: name)
+  var attr: attributes
+  begin search_library(drive, title, attr) end
+
+* proc address_library(drive, start, pageno: int): int
+  begin check(drive);
+    val address_library :=
+      address_diskmap(maps[drive], start, pageno)
+  end
+
+* proc extend_library(drive: int; var start: int)
+  begin check(drive); extend_diskmap(maps[drive], start);
+    original[drive] := true
+  end
+
+begin original := boolpair(false, false);
+  insert_library "both drives contain disks"
+end
+
+
+module "disk files"
+
+* record diskfile (title: name; open, safe, changed: bool;
+    drive, start: int; size: position)
+
+* proc open_file(var file: diskfile; title: name;
+    var size: position)
+  var drive: int; attr: attributes
+  begin search_library(drive, title, attr);
+    size := attr.length;
+    file := diskfile(title, true, attr.protected, false,
+      drive, attr.address, size)
+  end
+
+* proc read_file(var file: diskfile; pageno: int;
+    var block: page)
+  begin assume1(file.open, line('file closed.'));
+    assume2((1 <= pageno) and
+      (pageno <= file.size.pages),
+      file.title, line(' limit.'));
+    read_page(file.drive, address_library(file.drive,
+      file.start, pageno), block)
+  end
+
+* proc write_file(var file: diskfile; pageno: int;
+    var block: page)
+  begin assume1(file.open, line('file closed.'));
+    assume2(not file.safe, file.title,
+      line(' protected.'));
+    assume2((1 <= pageno) and
+      (pageno <= file.size.pages),
+      file.title, line(' limit.'));
+    write_page(file.drive, address_library(file.drive,
+      file.start, pageno), block)
+  end
+
+* proc extend_file(var file: diskfile;
+    newpage: bool; newwords: int)
+  begin assume1(file.open, line('file closed.'));
+    assume2(not file.safe, file.title,
+      line(' protected.'));
+    if newpage do
+      extend_library(file.drive, file.start);
+      file.size.pages := file.size.pages + 1
+    end;
+    file.size.words := newwords; file.changed := true
+  end
+
+* proc end_file(var file: diskfile)
+  begin assume1(file.open, line('file closed.'));
+    if file.changed do
+      change_library(file.drive, file.title,
+        attributes(file.start, file.size, file.safe))
+    end;
+    file.open := false
+  end
+
+begin skip end
+
+
+module "data streams"
+
+* record stream (data: diskfile; head, length: position;
+    block: page; newpage: bool)
+
+* proc openread_stream(var file: stream; title: name)
+  begin open_file(file.data, title, file.length);
+    file.head := position(1, 1) "reading(file)"
+  end
+
+* proc more_stream(var file: stream): bool
+  begin "reading(file)"
+    if file.head.pages < file.length.pages do
+      val more_stream := true
+    else file.head.pages = file.length.pages do
+      val more_stream :=
+        file.head.words <= file.length.words
+    else true do
+      val more_stream := false
+    end
+  end
+
+* proc read_stream(var file: stream; var value: char)
+  var x: int
+  begin "more_stream(file)"
+    x := file.head.words;
+    if x = 1 do
+      read_file(file.data, file.head.pages, file.block);
+      file.head.words := 2
+    else x = pagelength do
+      file.head := position(file.head.pages + 1, 1)
+    else true do
+      file.head.words := x + 1
+    end;
+    value := file.block[x]
+  end
+
+* proc mark_stream(var file: stream): position
+  begin "more_stream(file) or writing(file)"
+    val mark_stream := file.head
+  end
+
+* proc move_stream(var file: stream; place: position)
+  begin "reading(file)"
+    if not ((file.head.pages = place.pages)
+      and (file.head.words > 1)) do
+      read_file(file.data, place.pages, file.block)
+    end;
+    file.head := place
+  end
+
+* proc endread_stream(var file: stream)
+  begin "reading(file)"
+    end_file(file.data) "closed(file)"
+  end
+
+* proc openwrite_stream(var file: stream; title: name)
+  begin open_file(file.data, title, file.length);
+    if file.length.pages = 0 do
+      file.head := position(1, 1); file.newpage := true
+    else file.length.words = pagelength do
+      file.head := position(file.length.pages + 1, 1);
+      file.newpage := true
+    else true do
+      read_file(file.data, file.length.pages, file.block);
+      file.head := position(file.length.pages,
+        file.length.words + 1); file.newpage := false
+    end
+    "writing(file)"
+  end
+
+* proc write_stream(var file: stream;
+    value: char)
+  var x: int
+  begin "writing(file)" x := file.head.words;
+    file.block[x] := value;
+    if x = pagelength do
+      extend_file(file.data, file.newpage, pagelength);
+      write_file(file.data, file.head.pages, file.block);
+      file.head := position(file.head.pages + 1, 1);
+      file.newpage := true
+    else true do
+      file.head.words := x + 1
+    end
+  end
+
+* proc endwrite_stream(var file: stream)
+  begin "writing(file)"
+    if file.head.words > 1 do
+      extend_file(file.data, file.newpage,
+        file.head.words - 1);
+      write_file(file.data, file.head.pages, file.block)
+    end;
+    end_file(file.data) "closed(file)"
+  end
+
+begin skip end
+
+
+module "standard commands"
+
+* proc readdrive(var drive: int)
+  begin writeline_terminal(line('  Drive no = .'));
+    readint_terminal(drive)
+  end
+
+* proc readfile(var title: name)
+  begin writeline_terminal(line('  File name = .'));
+    readname_terminal(title)
+  end
+
+* proc list
+  var drive: int
+  begin readdrive(drive);
+    list_library(drive, write_terminal)
+  end
+
+* proc backup
+  var drive: int
+  begin readdrive(drive);
+    writeline_terminal(
+      line('insert blank disk in drive.'));
+    writeint_terminal(1 - drive, 2);
+    write_terminal(nl); pause_terminal;
+    backup_library(drive)
+  end
+
+* proc create
+  var drive: int; title: name
+  begin readdrive(drive); readfile(title);
+    create_library(drive, title)
+  end
+
+* proc delete
+  var drive: int; title: name
+  begin readdrive(drive); readfile(title);
+    delete_library(drive, title)
+  end
+
+* proc protect(value: bool)
+  var drive: int; title: name
+  begin readdrive(drive); readfile(title);
+    protect_library(drive, title, value)
+  end
+
+* proc rename
+  var drive: int; old, new: name
+  begin readdrive(drive);
+    writeline_terminal(line('  Old name = .'));
+    readname_terminal(old);
+    writeline_terminal(line('  New name = .'));
+    readname_terminal(new);
+    rename_library(drive, old, new)
+  end
+
+* proc copy
+  var drive: int; title1, title2, temp: name;
+    file1, file2: diskfile; size1, size2: position;
+    block: page
+  begin
+    writeline_terminal(line('  Input name = .'));
+    readname_terminal(title1);
+    writeline_terminal(line('  Output name = .'));
+    readname_terminal(title2);
+    writeline_terminal(line('  Output drive = .'));
+    readint_terminal(drive); temp := name('temp1');
+    delete_library(drive, title2);
+    create_library(drive, temp);
+    open_file(file1, title1, size1);
+    open_file(file2, temp, size2);
+    while size2.pages < size1.pages do
+      size2.pages := size2.pages + 1;
+      if size2.pages < size1.pages do
+        size2.words := pagelength
+      else true do size2.words := size1.words end;
+      read_file(file1, size2.pages, block);
+      extend_file(file2, true, size2.words);
+      write_file(file2, size2.pages, block)
+    end;
+    end_file(file1); end_file(file2);
+    rename_library(drive, temp, title2);
+    protect_library(drive, title2, true)
+  end
+
+* proc newsystem(kernel: bool)
+  const kerneladdr = "pageno" 3;
+    kernellimit = 4096 "words";
+    systemaddr = "pageno" 11;
+    systemlimit = 8192 "words"
+  var drive, length, limit, pageno, wordno, value: int;
+    title: name; file: stream; block: page
+  begin readdrive(drive); readfile(title);
+    openread_stream(file, title); wordno := 0;
+    if kernel do
+      pageno := kerneladdr; limit := kernellimit
+    else true do
+      pageno := systemaddr; limit := systemlimit;
+      while wordno < namelength do
+        wordno := wordno + 1;
+        block[wordno] := title[wordno]
+      end
+    end;
+    length := wordno;
+    while more_stream(file) do
+      assume2(length < limit, title,
+        line(' too large.'));
+      read_stream(file, value:char);
+      length := length + 1; wordno := wordno + 1;
+      block[wordno] := char(value);
+      if wordno = pagelength do
+        write_page(drive, pageno, block);
+        pageno := pageno + 1; wordno := 0
+      end
+    end;
+    if wordno > 0 do write_page(drive, pageno, block) end;
+    endread_stream(file)
+  end
+
+begin skip end
+
+
+module "library commands"
+
+  const codelength = 24 "pages = 12288 words"
+  array code [1:codelength] (page)
+  record program (progname: name; progcode: code)
+
+  proc load(title: name): program
+  var file: diskfile; length: position; i: int
+  begin open_file(file, title, length);
+    assume2(length.pages > 0, title,
+      line(' file empty.'));
+    assume2(length.pages <= codelength, title,
+      line(' code limit.'));
+    val load.progname := title; i := 1;
+    while i <= length.pages do
+      read_file(file, i, val load.progcode[i]);
+      i := i + 1
+    end
+  end
+
+  lib proc prefix(
+    progname: name;
+    pdp11: bool;
+    maxrow, maxcolumn: int;
+    proc select(normal: bool);
+    proc cursor(row, column: int);
+    proc erase;
+    proc display(value: char);
+    proc assume(condition: bool; text: line);
+    proc accept(var value: char);
+    proc pause;
+    proc print(value: char);
+    proc openread(var file: stream; title: name);
+    proc more(var file: stream): bool;
+    proc read(var file: stream; var value: char);
+    proc mark(var file: stream): position;
+    proc move(var file: stream; place: position);
+    proc endread(var file: stream);
+    proc openwrite(var file: stream; title: name);
+    proc write(var file: stream; value: char);
+    proc endwrite(var file: stream);
+    proc create(drive: int; title: name);
+    proc delete(drive: int; title: name);
+    proc locate(var drive: int; title: name);
+    proc rename(drive: int; old, new: name);
+    proc protect(drive: int; title: name; value: bool);
+    proc readbool(proc read(var c: char); var value: bool);
+    proc readint(proc read(var c: char); var value: int);
+    proc readname(proc read(var c: char); var value: name);
+    proc writebool(proc write(c: char); value: bool);
+    proc writeint(proc write(c: char); value, length: int);
+    proc writename(proc write(c: char); value: name);
+    proc writeline(proc write(c: char); value: line);
+    proc readsector(drive, sectorno: int;
+      var value: sector);
+    proc writesector(drive, sectorno: int; value: sector);
+    proc subset(first, last: char): charset;
+    proc load(title: name): program)
+  [ load(progname) ]
+
+* proc call(progname: name)
+  begin
+    prefix(progname, pdp11, maxrow, maxcolumn,
+      select_terminal, cursor, erase, write_terminal,
+      assume1, read_terminal, pause_terminal, print,
+      openread_stream, more_stream, read_stream,
+      mark_stream, move_stream, endread_stream,
+      openwrite_stream, write_stream, endwrite_stream,
+      create_library, delete_library, locate_library,
+      rename_library, protect_library, read_bool,
+      read_int, read_name, write_bool, write_int,
+      write_name, write_line, read_sector,
+      write_sector, subset, load);
+    select_terminal(true); display(bel)
+  end
+
+begin skip end
+
+
+var op: name
+begin
+  while true do
+    write_terminal(nl);
+    writeline_terminal(line('Command = .'));
+    readname_terminal(op);
+    if op = name('backup') do backup
+    else op = name('copy') do copy
+    else op = name('create') do create
+    else op = name('delete') do delete
+    else op = name('insert') do insert_library
+    else op = name('list') do list
+    else op = name('newkernel') do newsystem(true)
+    else op = name('newsystem') do newsystem(false)
+    else op = name('protect') do protect(true)
+    else op = name('rename') do rename
+    else op = name('unprotect') do protect(false)
+    else true do call(op) end;
+    flush_library
+  end
+end "Edison Operating system"

@@ -1,0 +1,996 @@
+"Edison-11 compiler: Pass 4
+
+ Code generation
+
+ Per Brinch Hansen
+
+ 4 August 1980
+
+ Copyright (c) 1980 Per Brinch Hansen"
+
+enum operator (add2, also2, and2, assign2, blank2,
+  cobegin2, constant2, construct2, difference2,
+  divide2, do2, else2, endcode2, endif2, endlib2,
+  endproc2, endwhen2, equal2, error2, field2,
+  funcval2, goto2, greater2, in2, index2,
+  intersection2, less2, libproc2, minus2, modulo2,
+  multiply2, newline2, not2, notequal2, notgreater2,
+  notless2, or2, paramarg2, paramcall2, parameter2,
+  procarg2, proccall2, procedure2, process2,
+  subtract2, union2, valspace2, value2, variable2,
+  wait2, when2, while2, addr2, halt2, obtain2,
+  place2, sense2)
+
+enum errorkind (ambiguous3, call3, cobegin3,
+  constructor3, funcval3, incomplete3,
+  numeral3, range3, split3, syntax3, type3,
+  undeclared3)
+
+enum failure (blocklimit, charlimit, inputlimit,
+  labellimit, namelimit, outputlimit, processlimit,
+  wordlimit)
+
+proc pass4(trim: bool;
+  proc next(var op: operator);
+  proc emit(value: int);
+  proc report(lineno: int; error: errorkind);
+  proc rerun;
+  proc fail(reason: failure))
+
+const "table limits"
+  maxblock = 10; maxlabel = 1000;
+
+  "type lengths" elemlength = 1; liblength = 1;
+  linklength = 5; proclength = 2;
+  setlength = 8 "words";
+  setlimit = 127 "+ 1 members";
+  none = 0
+
+enum opcode ("standard codes" add4, also4, and4,
+  assign4, blank4, cobegin4, constant4, construct4,
+  difference4, divide4, do4, else4, endcode4,
+  endlib4, endproc4, endwhen4, equal4, field4,
+  goto4, greater4, in4, index4, instance4,
+  intersection4, less4, libproc4, minus4,
+  modulo4, multiply4, newline4, not4, notequal4,
+  notgreater4, notless4, or4, paramarg4,
+  paramcall4, procarg4, proccall4, procedure4,
+  process4, subtract4, union4, valspace4, value4,
+  variable4, wait4, when4, addr4, halt4, obtain4,
+  place4, sense4,
+  "extra codes" elemassign4, elemvalue4, localcase4,
+  localset4, localvalue4, localvar4, outercall4,
+  outercase4, outerparam4, outerset4, outervalue4,
+  outervar4, setconst4, singleton4, stringconst4)
+
+var final: bool
+
+
+module "input"
+
+  set operators (operator)
+
+  var no_arguments, one_argument, two_arguments,
+    three_arguments, four_arguments: operators
+
+* var op: operator; a, b, c, d: int;
+    lineno: int
+
+* proc nextop
+  begin next(op);
+    while op = newline2 do
+      next(lineno:operator); next(op)
+    end;
+    if op in no_arguments do skip
+    else op in one_argument do next(a:operator)
+    else op in two_arguments do
+      next(a:operator); next(b:operator)
+    else op in three_arguments do
+      next(a:operator); next(b:operator);
+      next(c:operator)
+    else op in four_arguments do
+      next(a:operator); next(b:operator);
+      next(c:operator); next(d:operator)
+    end
+  end
+
+begin
+  no_arguments := operators(add2, and2, difference2,
+    divide2, endcode2, greater2, in2, intersection2,
+    less2, minus2, modulo2, multiply2, not2,
+    notgreater2, notless2, or2, subtract2, union2,
+    addr2, halt2, obtain2, place2, sense2);
+  one_argument := operators(assign2, blank2,
+    constant2, construct2, do2, endif2, endwhen2,
+    equal2, error2, field2, goto2, newline2,
+    notequal2, valspace2, value2, wait2, when2,
+    while2);
+  two_arguments := operators(also2, else2, endlib2,
+    funcval2, paramarg2, parameter2, procarg2,
+    process2, variable2);
+  three_arguments := operators(cobegin2, index2,
+    libproc2, paramcall2, proccall2);
+  four_arguments := operators(endproc2, procedure2)
+end
+
+
+module "labels"
+
+  array labeltable [1:maxlabel] (int)
+
+  var labels: labeltable; i: int
+
+* proc define(index, value: int)
+  begin labels[index] := value end
+
+* proc valueof(index: int): int
+  begin val valueof := labels[index] end
+
+begin i := 0;
+  while i < maxlabel do
+    i := i + 1; labels[i] := none
+  end
+end
+
+
+module "output"
+
+  const opbase = #400; spacing = 2
+
+  var pointer, wordno: int
+
+* var codelength: int
+
+* proc oper(op: opcode)
+  begin pointer := wordno;
+    emit(opbase + spacing * int(op));
+    wordno := wordno + 1
+  end
+
+* proc offset(value: int)
+  begin emit(spacing * value);
+    wordno := wordno + 1
+  end
+
+* proc literal(value: int)
+  begin emit(value);
+    wordno := wordno + 1
+  end
+
+* proc label(index: int)
+  begin emit(spacing * (valueof(index) - pointer));
+    wordno := wordno + 1
+  end
+
+* proc defaddr(label: int)
+  begin define(label, wordno) end
+
+* proc out_again
+  begin codelength := wordno - 1;
+    pointer := 1; wordno := 1
+  end
+
+begin codelength := 0; pointer := 1;
+  wordno := 1
+end
+
+
+module "errors"
+
+  var errorline: int
+
+* proc error(kind: errorkind)
+  begin
+    if not final and (lineno <> errorline) do
+      report(lineno, kind); errorline := lineno
+    end;
+    nextop
+  end
+
+begin errorline := none end
+
+
+module "parameters"
+
+  array paramtable [1:maxblock] (int)
+
+  var procs: paramtable; level: int
+
+* proc newproc(paramlength: int)
+  begin
+    if level = maxblock do fail(blocklimit) end;
+    level := level + 1;
+    procs[level] := paramlength
+  end
+
+* proc thislevel: int
+  begin val thislevel := level end
+
+* proc paramlength(level: int): int
+  begin val paramlength := procs[level] end
+
+* proc endprocx
+  begin level := level - 1 end
+
+* proc initparam
+  begin level := 0 end
+
+begin initparam end
+
+
+module "temporaries"
+
+  record tempattr (temp, maxtemp: int)
+
+  array temptable [1:maxblock] (tempattr)
+
+  var temps: temptable; level: int
+
+* proc newtemp
+  begin
+    if level = maxblock do fail(blocklimit) end;
+    level := level + 1;
+    temps[level] := tempattr(0, 0)
+  end
+
+* proc push(length: int)
+  var t: tempattr
+  begin t := temps[level];
+    t.temp := t.temp + length;
+    if t.maxtemp < t.temp do
+      t.maxtemp := t.temp
+    end;
+    temps[level] := t
+  end
+
+* proc pop(length: int)
+  begin
+    temps[level].temp := temps[level].temp - length
+  end
+
+* proc endtemp(var templength: int)
+  begin templength := temps[level].maxtemp;
+    level := level - 1
+  end
+
+* proc inittemp
+  begin level := 0 end
+
+begin inittemp end
+
+
+proc again
+begin rerun; out_again;
+  initparam; inittemp
+end
+
+proc in_setrange(value: int): bool
+begin
+  val in_setrange :=
+    (0 <= value) and (value <= setlimit)
+end
+
+
+"extra codes:"
+
+pre proc constlist(value: int)
+
+"nearby_case(steps, displ, value, falselabel);
+   nearby_equal(steps, displ, value) 'do(falselabel)'"
+
+proc nearby_case(steps, displ, value, falselabel: int)
+begin "0 <= steps <= 1"
+  if steps = 0 do oper(localcase4)
+  else true do oper(outercase4) end;
+  offset(displ); literal(value); label(falselabel);
+  nextop
+end
+
+"nearby_equal(steps, displ, value):
+   nearby_elem_const(steps, displ, value) 'equal(1)'"
+
+proc nearby_equal(steps, displ, value: int)
+begin "0 <= steps <= 1" nextop;
+  if op = do2 do
+    nearby_case(steps, displ, value, a)
+  else true do
+    if steps = 0 do oper(localvalue4)
+    else true do oper(outervalue4) end;
+    offset(displ); push(1);
+    oper(constant4); literal(value); push(1);
+    oper(equal4); offset(1); pop(1)
+  end
+end
+
+"nearby_elem_const(steps, displ, value):
+   nearby_elem(steps, displ) 'constant(value)'"
+
+proc nearby_elem_const(steps, displ, value: int)
+begin "0 <= steps <= 1" nextop;
+  if (op = equal2) and (a = 1) do
+    nearby_equal(steps, displ, value)
+  else true do
+    if steps = 0 do oper(localvalue4)
+    else true do oper(outervalue4) end;
+    offset(displ); push(1);
+    if in_setrange(value) and (op = constant2) do
+      constlist(value)
+    else in_setrange(value) and (op = construct2)
+      and (a = 1) do
+      oper(singleton4); literal(value);
+      push(setlength); nextop
+    else true do
+      oper(constant4); literal(value); push(1)
+    end
+  end
+end
+
+"nearby_elem(steps, displ):
+   localvalue(displ) # outervalue(displ)
+ localvalue(displ):
+   localvar(displ) 'value(1)'
+ outervalue(displ):
+   outervar(displ) 'value(1)'"
+
+proc nearby_elem(steps, displ: int)
+begin "0 <= steps <= 1" nextop;
+  if op = constant2 do
+    nearby_elem_const(steps, displ, a)
+  else true do
+    if steps = 0 do oper(localvalue4)
+    else true do oper(outervalue4) end;
+    offset(displ); push(1)
+  end
+end
+
+"nearby_set(steps, displ):
+   localset(displ) # outerset(displ)
+ localset(displ):
+   localvar(displ) 'value(setlength)'
+ outerset(displ):
+   outervar(displ) 'value(setlength)'"
+
+proc nearby_set(steps, displ: int)
+begin "0 <=_steps <= 1" nextop;
+  if steps = 0 do oper(localset4)
+  else true do oper(outerset4) end;
+  offset(displ); push(setlength)
+end
+
+"nearby_variable(steps, displ):
+   localvar(displ) # outervar(displ)
+ localvar(displ):
+   'instance(0)' 'variable(displ)'
+ outervar(displ):
+   'instance(1)' 'variable(displ)'"
+
+proc nearby_variable(steps, displ: int)
+begin "0 <= steps <= 1, nextop already called"
+  if (op = value2) and (a = 1) do
+    nearby_elem(steps, displ)
+  else (op = value2) and (a = setlength) do
+    nearby_set(steps, displ)
+  else true do
+    if steps = 0 do oper(localvar4)
+    else true do oper(outervar4) end;
+    offset(displ); push(1)
+  end
+end
+
+"constlist(n, value1, ..., valuen):
+   setconst(n, value1, ..., valuen) #
+   stringconst(n, value1, ..., valuen)
+ setconst(n, value1, ..., valuen):
+   stringconst(n, value1, ..., valuen)
+   'construct(n, lineno)'
+ stringconst(n, value1, ..., valuen):
+   'constant(value1)' ... 'constant(valuen)'"
+
+post proc constlist(value1: int)
+const maxn = 80
+array table [1:maxn] (int)
+var list: table; n, i: int
+begin
+"in_setrange(value1) and (op = constant2)
+and (a = value2)"
+  n := 1; list[1] := value1;
+  while (op = constant2) and in_setrange(a)
+    and (n < maxn) do
+    n := n + 1; list[n] := a; nextop
+  end;
+  if (op = construct2) and (a <= n) do
+    i := 0;
+    while i < n - a do
+      i := i + 1; oper(constant4); literal(list[i])
+    end;
+    push(n - a);
+    if a = 1 do
+      oper(singleton4); literal(list[n])
+    else true do
+      oper(setconst4); literal(a);
+      while i < n do
+        i := i + 1; literal(list[i])
+      end
+    end;
+    push(setlength); nextop
+  else true do
+    oper(stringconst4); literal(n); i := 0;
+    while i < n do
+      i := i + 1; literal(list[i])
+    end;
+    push(n)
+  end
+end
+
+"singleton(value):
+   smallconst(value) 'construct(1, lineno)'"
+
+proc singleton(value: int)
+begin oper(singleton4); literal(value);
+  push(setlength); nextop
+end
+
+"one:
+   'constant(1)'"
+
+proc one
+begin "nextop already called"
+  if op = do2 do nextop
+  else true do
+    oper(constant4); literal(1); push(1)
+  end
+end
+
+"smallconst(value):
+   'constant(value)'"
+
+proc smallconst(value: int)
+begin "in setrange(value)" nextop;
+  if op = constant2 do constlist(value)
+  else (op = construct2) and (a = 1) do
+    singleton(value)
+  else value = 1 do one
+  else true do
+    oper(constant4); literal(value); push(1)
+  end
+end
+
+"elemvalue:
+   'value(1)'"
+
+proc elemvalue
+begin oper(elemvalue4); nextop end
+
+"elemassign:
+   'assign(1)'"
+
+proc elemassign
+begin oper(elemassign4); pop(2); nextop end
+
+"outercall(displ):
+   'instance(1)' 'proccall(displ)'"
+
+proc outercall(proclabel, arglength: int)
+begin oper(outercall4); label(proclabel);
+  push(linklength); pop(arglength + linklength);
+  nextop
+end
+
+"outerparam(displ):
+   'instance(1)' 'paramcall(displ)'"
+
+proc outerparam(displ, arglength: int)
+begin oper(outerparam4); offset(displ);
+  push(linklength); pop(arglength + linklength);
+  nextop
+end
+
+
+"standard code"
+
+"library_procedure:
+   'goto' 'libproc' expression 'endlib'"
+
+proc goto(endlabel: int)
+begin oper(goto4); label(endlabel); nextop end
+
+proc libproc(proclabel, paramlength, templabel: int)
+begin defaddr(proclabel); oper(libproc4);
+  offset(paramlength); offset(valueof(templabel));
+  literal(lineno); newproc(paramlength);
+  newtemp; nextop
+end
+
+proc endlib(templabel, endlabel: int)
+var templength: int
+begin endtemp(templength); endprocx;
+  define(templabel, templength);
+  oper(endlib4); literal(lineno);
+  defaddr(endlabel); nextop
+end
+
+"complete_procedure:
+   [ 'goto' ] 'procedure' [ declaration ]*
+   statement_part 'endproc'"
+
+proc procedure(proclabel, paramlength, varlabel,
+  templabel: int)
+begin defaddr(proclabel); oper(procedure4);
+  offset(paramlength); offset(valueof(varlabel));
+  offset(valueof(templabel)); literal(lineno);
+  newproc(paramlength); newtemp; nextop
+end
+
+proc endproc(varlabel, varlength, templabel,
+  endlabel: int)
+var templength: int
+begin endtemp(templength); endprocx;
+  define(templabel, templength);
+  define(varlabel, varlength); oper(endproc4);
+  defaddr(endlabel); nextop
+end
+
+"procedure_declaration:
+   complete procedure # library_procedure
+ module_declaration:
+   [ declaration ]* statement_part
+ declaration:
+   empty # procedure_declaration #
+   module_declaration"
+
+"variable_symbol:
+   whole_variable #
+   variable_symbol [ 'field' ] #
+   variable_symbol expression 'index'
+ whole_variable:
+   'instance' 'variable' [ 'value' ]"
+
+proc field(displ: int)
+begin nextop;
+  while op = field2 do
+    displ := displ + a; nextop
+  end;
+  if displ <> 0 do
+    oper(field4); offset(displ)
+  end
+end
+
+proc index(lower, upper, length: int)
+begin oper(index4); literal(lower);
+  literal(upper); offset(length); literal(lineno);
+  pop(1); nextop
+end
+
+proc whole_variable(level, displ: int)
+var steps: int
+begin "op in operators(variable2, parameter2, funcval2)"
+  steps := thislevel - level; nextop;
+  while op = field2 do
+    displ := displ + a; nextop
+  end;
+  if trim and (steps <= 1) do
+    nearby_variable(steps, displ)
+  else true do
+    oper(instance4); literal(steps);
+    oper(variable4); offset(displ);
+    push(1)
+  end
+end
+
+proc variable(level, displ: int)
+begin whole_variable(level, linklength + displ) end
+
+proc parameter(level, displ: int)
+begin
+  whole_variable(level, - paramlength(level) + displ)
+end
+
+proc funcval(level, length: int)
+begin
+  whole_variable(level + 1,
+    - paramlength(level + 1) - length)
+end
+
+"constructor:
+   elementary_constructor # record_constructor #
+   array_constructor # set_constructor
+ elementary_constructor:
+   expression
+ record_constructor:
+   expression [ expression ]*
+ array_constructor:
+   expression [ expression ]* [ 'blank' ]
+ set_constructor:
+   [ expression ]* 'construct'"
+
+proc blank(number: int)
+begin oper(blank4); literal(number);
+  push(number); nextop
+end
+
+proc construct(number: int)
+begin oper(construct4); literal(number);
+  literal(lineno); pop(number);
+  push(setlength); nextop
+end
+
+"factor:
+   'constant' # constructor # variable_symbol 'value' #
+   'valspace' procedure_call # expression #
+   factor 'not' # factor"
+
+proc constant(value: int)
+begin
+  if trim and in_setrange(value) do
+    smallconst(value)
+  else true do
+    oper(constant4); literal(value);
+    push(1); nextop
+  end
+end
+
+proc value(length: int)
+begin
+  if trim and (length = 1) do elemvalue
+  else true do
+    oper(value4); offset(length);
+    pop(1); push(length); nextop
+  end
+end
+
+proc valspace(length: int)
+begin oper(valspace4); offset(length);
+  push(length); nextop
+end
+
+proc notx
+begin oper(not4); nextop end
+
+"term:
+   factor [ factor multiplying operator ]*
+ multiplying_operator:
+   'multiply' # 'divide' # 'modulo' #
+   'and' # 'intersection'"
+
+proc multiply
+begin oper(multiply4); literal(lineno);
+  pop(1); nextop
+end
+
+proc divide
+begin oper(divide4); literal(lineno);
+  pop(1); nextop
+end
+
+proc modulo
+begin oper(modulo4); literal(lineno);
+  pop(1); nextop
+end
+
+proc andx
+begin oper(and4); pop(1); nextop end
+
+proc intersection
+begin oper(intersection4); pop(setlength);
+  nextop
+end
+
+"signed_term:
+   term [ empty # 'minus' ]"
+
+proc minus
+begin oper(minus4); literal(lineno); nextop end
+
+"simple_expression:
+   signed_term [ term adding_operator ]*
+ adding_operator:
+   'add' # 'subtract' # 'or' # 'union' #
+   'difference'"
+
+proc add
+begin oper(add4); literal(lineno);
+  pop(1); nextop
+end
+
+proc subtract
+begin oper(subtract4); literal(lineno);
+  pop(1); nextop
+end
+
+proc orx
+begin oper(or4); pop(1); nextop end
+
+proc union
+begin oper(union4); pop(setlength); nextop end
+
+proc difference
+begin oper(difference4); pop(setlength); nextop end
+
+"expression:
+   simple_expression
+   [ simple_expression relational_operator ]
+ relational_operator:
+   'equal' # 'notequal' # 'less' # 'notless' #
+   'greater' # 'notgreater' # 'in'"
+
+proc equal(length: int)
+begin oper(equal4); offset(length);
+  pop(2 * length); push(1); nextop
+end
+
+proc notequal(length: int)
+begin oper(notequal4); offset(length);
+  pop(2 * length); push(1); nextop
+end
+
+proc less
+begin oper(less4); pop(1); nextop end
+
+proc notless
+begin oper(notless4); pop(1); nextop end
+
+proc greater
+begin oper(greater4); pop(1); nextop end
+
+proc notgreater
+begin oper(notgreater4); pop(1); nextop end
+
+proc inx
+begin oper(in4); literal(lineno);
+  pop(setlength); nextop
+end
+
+"assignment_statement:
+   variable_symbol expression 'assign'"
+
+proc assign(length: int)
+begin
+  if trim and (length = 1) do elemassign
+  else true do
+    oper(assign4); offset(length);
+    pop(1 + length); nextop
+  end
+end
+
+"standard_call:
+   variable_symbol 'addr' #
+   'halt' #
+   expression variable_symbol 'obtain' #
+   expression expression 'place' #
+   expression expression 'sense'"
+
+proc addrx
+begin oper(addr4); pop(1); nextop end
+
+proc haltx
+begin oper(halt4); literal(lineno); nextop end
+
+proc obtainx
+begin oper(obtain4); pop(2); nextop end
+
+proc placex
+begin oper(place4); pop(2); nextop end
+
+proc sensex
+begin oper(sense4); pop(2); nextop end
+
+"procedure argument:
+   'procarg' # 'paramarg'"
+
+proc procarg(level, proclabel: int)
+begin oper(instance4); literal(thislevel - level);
+  oper(procarg4); label(proclabel);
+  push(proclength); nextop
+end
+
+proc paramarg(level, displ: int)
+begin oper(instance4); literal(thislevel - level);
+  oper(paramarg4);
+  offset(- paramlength(level) + displ);
+  push(proclength); nextop
+end
+
+"argument:
+   expression # variable_symbol # procedure_argument
+ argument_list:
+   argument [ argument ]*
+ procedure_call:
+   standard_call #
+   [ argument_list ] 'proccall' #
+   [ argument_list ] 'paramcall'"
+
+proc proccall(level, proclabel, arglength: int)
+var steps: int
+begin steps := thislevel - level;
+  if trim and (steps = 1) do
+    outercall(proclabel, arglength)
+  else true do
+    oper(instance4); literal(steps);
+    oper(proccall4); label(proclabel);
+    push(linklength); pop(arglength + linklength);
+    nextop
+  end
+end
+
+proc paramcall(level, displ, arglength: int)
+var steps: int
+begin steps := thislevel - level;
+  displ := - paramlength(level) + displ;
+  if trim and (steps = 1) do
+    outerparam(displ, arglength)
+  else true do
+    oper(instance4); literal(steps);
+    oper(paramcall4); offset(displ);
+    push(linklength); pop(arglength + linklength);
+    nextop
+  end
+end
+
+"conditional_statement:
+   expression 'do' statement_list 'else'
+ conditional_statement_list:
+   conditional_statement [ conditional_statement ]*"
+
+proc dox(falselabel: int)
+begin oper(do4); label(falselabel); pop(1);
+  nextop
+end
+
+proc elsex(truelabel, falselabel: int)
+begin nextop;
+  if op <> endif2 do
+    oper(else4); label(truelabel)
+  end;
+  defaddr(falselabel)
+end
+
+"if_statement:
+   conditional_statement_list 'endif'"
+
+proc endif(truelabel: int)
+begin defaddr(truelabel); nextop end
+
+"while_statement:
+   'while' conditional_statement_list"
+
+proc whilex(truelabel: int)
+begin defaddr(truelabel); nextop end
+
+"when_statement:
+   'when' conditional_statement_list 'wait'
+   'endwhen'"
+
+proc whenx(waitlabel: int)
+begin oper(when4); defaddr(waitlabel); nextop end
+
+proc wait(waitlabel: int)
+begin oper(wait4); label(waitlabel); nextop end
+
+proc endwhen(truelabel: int)
+begin defaddr(truelabel); oper(endwhen4);
+  nextop
+end
+
+"process_statement:
+   'process' statement_list 'also'"
+
+proc process(proclabel, templabel: int)
+begin defaddr(proclabel); oper(process4);
+  offset(valueof(templabel)); literal(lineno);
+  newtemp; nextop
+end
+
+proc alsox(endlabel, templabel: int)
+var templength: int
+begin endtemp(templength);
+  define(templabel, templength);
+  oper(also4); label(endlabel); nextop
+end
+
+"process_statement_list:
+   process_statement [ process_statement ]*
+ concurrent_statement:
+   'goto' process_statement_list 'cobegin'"
+
+proc cobeginx(beginlabel, endlabel, number: int)
+var procconst, proclabel, i: int
+begin defaddr(beginlabel); oper(cobegin4);
+  literal(number); literal(lineno); i := 0;
+  while i < number do
+    next(procconst:operator); literal(procconst);
+    next(proclabel:operator); label(proclabel);
+    i := i + 1
+  end;
+  defaddr(endlabel); nextop
+end
+
+"statement:
+   empty # assignment_statement #
+   procedure_call # if_statement #
+   while_statement # when_statement #
+   concurrent_statement
+ statement_list:
+   statement [ statement ]*
+ statement_part:
+   statement_list
+ program:
+   complete_procedure 'endcode'"
+
+proc endcode
+begin oper(endcode4); literal(lineno - 1) end
+proc assemble(last_scan: bool)
+var more: bool
+begin final := last_scan; more := true;
+  offset(codelength); nextop;
+  while more do
+    if op <= construct2 do
+      if op = add2 do add
+      else op = also2 do alsox(a, b)
+      else op = and2 do andx
+      else op = assign2 do assign(a)
+      else op = blank2 do blank(a)
+      else op = cobegin2 do cobeginx(a, b, c)
+      else op = constant2 do constant(a)
+      else op = construct2 do construct(a) end
+    else op <= endproc2 do
+      if op = difference2 do difference
+      else op = divide2 do divide
+      else op = do2 do dox(a)
+      else op = else2 do elsex(a, b)
+      else op = endcode2 do
+        endcode; more := false
+      else op = endif2 do endif(a)
+      else op = endlib2 do endlib(a, b)
+      else op = endproc2 do endproc(a, b, c, d) end
+    else op <= in2 do
+      if op = endwhen2 do endwhen(a)
+      else op = equal2 do equal(a)
+      else op = error2 do error(errorkind(a))
+      else op = field2 do field(a)
+      else op = funcval2 do funcval(a, b)
+      else op = goto2 do goto(a)
+      else op = greater2 do greater
+      else op = in2 do inx end
+    else op <= not2 do
+      if op = index2 do index(a, b, c)
+      else op = intersection2 do intersection
+      else op = less2 do less
+      else op = libproc2 do libproc(a, b, c)
+      else op = minus2 do minus
+      else op = modulo2 do modulo
+      else op = multiply2 do multiply
+      else op = not2 do notx end
+    else op <= procarg2 do
+      if op = notequal2 do notequal(a)
+      else op = notgreater2 do notgreater
+      else op = notless2 do notless
+      else op = or2 do orx
+      else op = paramarg2 do paramarg(a, b)
+      else op = paramcall2 do
+        paramcall(a, b, c)
+      else op = parameter2 do parameter(a, b)
+      else op = procarg2 do procarg(a, b) end
+    else op <= variable2 do
+      if op = proccall2 do proccall(a, b, c)
+      else op = procedure2 do
+        procedure(a, b, c, d)
+      else op = process2 do process(a, b)
+      else op = subtract2 do subtract
+      else op = union2 do union
+      else op = valspace2 do valspace(a)
+      else op = value2 do value(a)
+      else op = variable2 do variable(a, b) end
+    else op <= sense2 do
+      if op = wait2 do wait(a)
+      else op = when2 do whenx(a)
+      else op = while2 do whilex(a)
+      else op = addr2 do addrx
+      else op = halt2 do haltx
+      else op = obtain2 do obtainx
+      else op = place2 do placex
+      else op = sense2 do sensex end
+    end
+  end
+end
+
+begin assemble(false); again; assemble(true) end
