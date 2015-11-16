@@ -3,12 +3,14 @@
 %option noyywrap noinput nounput
 
 %{
+#include <err.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 
 static void fputs_ul(const char *s, FILE *stream);
-static FILE *stream;
 
+static FILE *stream;
 %}
 
 %%
@@ -52,16 +54,45 @@ WHILE           fputs_ul(yytext, stream);
 
 %%
 
+static bool opt_underline, opt_bold;
+
 static void fputs_ul(const char *s, FILE *stream) {
   int i;
   for (i = 0; s[i]; i += 1) {
-    putc('_', stream);
-    putc('\b', stream);
+    if (opt_underline) {
+      putc('_', stream);
+      putc('\b', stream);
+    }
+    if (opt_bold) {
+      putc(yytext[i], stream);
+      putc('\b', stream);
+    }
     putc(yytext[i], stream);
   }
 }
 
-int main(void) {
+static void usage(const char *argv0) {
+  fprintf(stderr, "usage: %s [-u] [-b] [file ...]\n", argv0);
+}
+
+int main(int argc, char *argv[]) {
+  int opt;
+  while ((opt = getopt(argc, argv, "ub")) != -1) {
+    switch (opt) {
+    case 'u':
+      opt_underline = true;
+      break;
+    case 'b':
+      opt_bold = true;
+      break;
+    default:
+      usage(argv[0]);
+    }
+  }
+  if (!opt_underline && !opt_bold) {
+    opt_underline = true;
+  }
+
   stream = stdout;
   if (isatty(STDOUT_FILENO)) {
     FILE *ul = popen("/usr/bin/ul", "w");
@@ -69,7 +100,21 @@ int main(void) {
       stream = ul;
     }
   }
-  yylex();
+
+  if (optind == argc) {
+    yylex();
+  } else {
+    int i;
+    for (i = optind; i < argc; i += 1) {
+      yyin = fopen(argv[i], "r");
+      if (!yyin) {
+        err(1, "%s", argv[i]);
+      }
+      yylex();
+      fclose(yyin);
+    }
+  }
+
   fclose(stream);
   return 0;
 }

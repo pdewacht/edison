@@ -1,7 +1,10 @@
+#include <stdio.h>
+
 /* edison.l */
 
 extern int token_get(void);
 extern void token_push_back(int token);
+extern FILE *yyin;
 extern char *yytext;
 extern int lineno;
 

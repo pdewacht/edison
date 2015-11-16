@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <err.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,7 +71,7 @@ void fmt_error(void) {
 }
 
 static void usage(const char *argv0) {
-  fprintf(stderr, "usage: %s [-i spaces]\n", argv0);
+  fprintf(stderr, "usage: %s [-i spaces] [file]\n", argv0);
   exit(1);
 }
 
@@ -85,8 +86,14 @@ int main(int argc, char *argv[]) {
       usage(argv[0]);
     }
   }
-  if (optind < argc) {
+  if (optind + 1 < argc) {
     usage(argv[0]);
+  }
+  if (optind < argc) {
+    yyin = fopen(argv[optind], "r");
+    if (!yyin) {
+      err(1, argv[optind]);
+    }
   }
 
   parse_program();
