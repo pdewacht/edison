@@ -918,6 +918,7 @@ end
 
 proc endcode
 begin oper(endcode4); literal(lineno - 1) end
+
 proc assemble(last_scan: bool)
 var more: bool
 begin final := last_scan; more := true;

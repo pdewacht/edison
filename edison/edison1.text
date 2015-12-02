@@ -114,7 +114,7 @@ module "word table"
   var i: int
   begin i := key(word, length);
     while table[i].alias <> none do
-      i := 1 mod maxword + 1
+      i := i mod maxword + 1
     end;
     insert(word, length, i, value)
   end
@@ -159,8 +159,8 @@ begin top := 0; size := maxword;
   declare(line('NOT'), 3, int(not1));
   declare(line('OR'), 2, int(or1));
   declare(line('PRE'), 3, int(pre1));
-  declare(line('POST'), u, int(post1));
-  declare(line('PROC'), u, int(proc1));
+  declare(line('POST'), 4, int(post1));
+  declare(line('PROC'), 4, int(proc1));
   declare(line('RECORD'), 6, int(record1));
   declare(line('SET'), 3, int(set1));
   declare(line('SKIP'), 4, int(skip1));
@@ -173,7 +173,7 @@ begin top := 0; size := maxword;
   declare(line('CHAR'), 4, - char1);
   declare(line('FALSE'), 5, - false1);
   declare(line('INT'), 3, - int1);
-  declare(line('TRUE'), 4 - true1);
+  declare(line('TRUE'), 4, - true1);
   declare(line('ADDR'), 4, - addr1);
   declare(line('HALT'), 4, - halt1);
   declare(line('OBTAIN'), 6, - obtain1);
@@ -279,7 +279,7 @@ module "nextsym"
           emit(comma1); emit2(graphic1, int(ch));
           next(ch)
         end;
-        if on = apostrophy do next(ch)
+        if ch = apostrophy do next(ch)
         else true do error(syntax3) end
       else true do
         if ch = apostrophy do next(ch) end;

@@ -580,7 +580,7 @@ proc variable_declaration_list(level, displ: int;
 var first: int
 begin "sym = var1" nextsym;
   variable_list(variable, level, displ, first,
-    length:succ)
+    length, succ)
 end
 
 "parameter_group:
@@ -845,7 +845,7 @@ var t: typeattr; exprtype: int
 begin "sym = lbracket1" nextsym;
   t := names[typ]:typeattr;
   expression(exprtype, symbols(rbracket1) + succ);
-  if t.typekind:arraytype do
+  if t.typekind = arraytype do
     if exprtype = t.subtype1 do
       typ := t.subtype2;
       emit4(index2, t.bound1, t.bound2,

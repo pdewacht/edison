@@ -162,7 +162,7 @@ module "names"
         else true do
           if n.kind = split do error(split3) end;
           if n.maxlevel = n.minlevel do
-            if map[n.originalname]:finalname do
+            if map[n.originalname] = finalname do
               map[n.originalname] := noname
             end;
             n := nameattr(undeclared, 0, 0, 0)
@@ -648,7 +648,7 @@ begin "sym in procsym"
     preprocedure(export, succ)
   else sym = post1 do
     postprocedure(export, succ)
-  else sym:lib1 do
+  else sym = lib1 do
     library_procedure(export, succ)
   end
 end

@@ -229,7 +229,7 @@ module "terminal"
   proc typeline
   var i, x, n: int; c: char
   begin text[1] := nl; n := 1; x := 1; accept(c);
-    while 0 <> cr do
+    while c <> cr do
       if (c = left) and (x > 1) do
         display(bs); x := x - 1
       else c = right do
