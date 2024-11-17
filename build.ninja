@@ -1,0 +1,92 @@
+rule expect
+  command = expect -f $in
+
+build disks/edison.dsk: expect bootstrap.tcl | $
+  disks/bootstrap.dsk $
+  disks/sources1.dsk $
+  disks/sources2.dsk $
+  disks/sources3.dsk $
+  bin-edison/kernel
+
+#
+# Bootstrap disks
+#
+
+rule disk
+  command = rm -f $out; bin/edison-make-disk $out $in
+
+build disks/bootstrap.dsk: disk $
+  bin-edison/kernel bin-edison/system $
+  bin-edison/compile $
+  bin-edison/edison1 $
+  bin-edison/edison2 $
+  bin-edison/edison3 $
+  bin-edison/edison4 $
+  src/edison/type.text $
+  src/edison/dump.text $
+  src/edison/compare.text $
+  | bin/edison-make-disk
+
+build disks/sources1.dsk: disk $
+  /dev/null /dev/null $
+  book/prefix.text $
+  book/system.text $
+  book/compile.text $
+  book/edison1.text $
+  book/edison2.text $
+  | bin/edison-make-disk
+
+build disks/sources2.dsk: disk $
+  /dev/null /dev/null $
+  book/edison3.text $
+  book/edison4.text $
+  src/edison/alva.text $
+  | bin/edison-make-disk
+
+build disks/sources3.dsk: disk $
+  /dev/null /dev/null $
+  book/kernel.text $
+  | bin/edison-make-disk
+
+#
+# Edison bootstrap
+#
+
+rule edison
+  command = bin/edison-compiler $in $out
+
+rule alva
+  command = bin/edison-alva $in $out
+
+build bin-edison/kernel: alva book/kernel.text | bin/edison-alva
+build bin-edison/system: edison book/system.text | bin/edison-compiler
+build bin-edison/compile: edison book/compile.text | bin/edison-compiler
+build bin-edison/edison1: edison book/edison1.text | bin/edison-compiler
+build bin-edison/edison2: edison book/edison2.text | bin/edison-compiler
+build bin-edison/edison3: edison book/edison3.text | bin/edison-compiler
+build bin-edison/edison4: edison book/edison4.text | bin/edison-compiler
+
+#
+# Go tooling
+#
+
+rule go
+  command = go build -o $out $in
+
+build bin/edison-make-disk: go $
+  src/make-disk/main.go $
+  src/make-disk/fs.go $
+  src/make-disk/disk.go
+
+build bin/edison-compiler: go $
+  src/compiler/compile.go $
+  src/compiler/edison1.go $
+  src/compiler/edison2.go $
+  src/compiler/edison3.go $
+  src/compiler/edison4.go $
+  src/compiler/set.go
+
+build bin/edison-alva: go $
+  src/assembler/assembler.go $
+  src/assembler/alva.go $
+  src/assembler/set.go

@@ -1,0 +1,66 @@
+const nl = char (10); sp = ' ';
+  linelength = 80 "characters";
+  namelength = 12 "characters";
+  sectorlength = 64 "integers"
+set charset (char)
+array line [1:linelength] (char)
+array name [1:namelength] (char)
+array sector [1:sectorlength] (int)
+record position (pages, words: int)
+enum word (sixteen_bits)
+array program [1:12300] (word)
+array stream [1:536] (word)
+
+proc prefix(
+  progname: name;
+  pdp11: bool;
+  maxrow, maxcolumn: int;
+  proc select(normal: bool);
+  proc cursor(row, column: int);
+  proc erase;
+  proc display(value: char);
+  proc assume(condition: bool; text: line);
+  proc accept(var value: char);
+  proc pause;
+  proc print(value: char);
+  proc openread(var file: stream; title: name);
+  proc more(var file: stream): bool;
+  proc read(var file: stream; var value: char);
+  proc mark(var file: stream): position;
+  proc move(var file: stream; place: position);
+  proc endread(var file: stream);
+  proc openwrite(var file: stream; title: name);
+  proc write(var file: stream; value: char);
+  proc endwrite(var file: stream);
+  proc create(drive: int; title: name);
+  proc delete(drive: int; title: name);
+  proc locate(var drive: int; title: name);
+  proc rename(drive: int; old, new: name);
+  proc protect(drive: int; title: name; value: bool);
+  proc readbool(proc read(var c: char); var value: bool);
+  proc readint(proc read(var c: char); var value: int);
+  proc readname(proc read(var c: char); var value: name);
+  proc writebool(proc write(d: char); value: bool);
+  proc writeint(proc write(c: char); value, length: int);
+  proc writename(proc write(c: char); value: name);
+  proc writeline(proc write(c: char); value: line);
+  proc readsector(drive, sectorno: int;
+    var value: sector);
+  proc writesector(drive, sectorno: int; value: sector);
+  proc subset(first, last: char): charset;
+  proc load(title: name): program)
+
+var fn: name;
+  input: stream;
+  ch: char
+
+begin
+  writeline(display, line('  File name = .'));
+  readname(accept, fn);
+  openread(input, fn);
+  while more(input) do
+    read(input, ch);
+    display(ch)
+  end;
+  endread(input)
+end

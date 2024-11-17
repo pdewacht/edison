@@ -1,0 +1,979 @@
+const nl = char (10); sp = ' ';
+  linelength = 80 "characters";
+  namelength = 12 "characters";
+  sectorlength = 64 "integers"
+set charset (char)
+array line [1:linelength] (char)
+array name [1:namelength] (char)
+array sector [1:sectorlength] (int)
+record position (pages, words: int)
+enum word (sixteen_bits)
+array program [1:12300] (word)
+array stream [1:536] (word)
+
+proc prefix(
+  progname: name;
+  pdp11: bool;
+  maxrow, maxcolumn: int;
+  proc select(normal: bool);
+  proc cursor(row, column: int);
+  proc erase;
+  proc display(value: char);
+  proc assume(condition: bool; text: line);
+  proc accept(var value: char);
+  proc pause;
+  proc print(value: char);
+  proc openread(var file: stream; title: name);
+  proc more(var file: stream): bool;
+  proc read(var file: stream; var value: char);
+  proc mark(var file: stream): position;
+  proc move(var file: stream; place: position);
+  proc endread(var file: stream);
+  proc openwrite(var file: stream; title: name);
+  proc write(var file: stream; value: char);
+  proc endwrite(var file: stream);
+  proc create(drive: int; title: name);
+  proc delete(drive: int; title: name);
+  proc locate(var drive: int; title: name);
+  proc rename(drive: int; old, new: name);
+  proc protect(drive: int; title: name; value: bool);
+  proc readbool(proc read(var c: char); var value: bool);
+  proc readint(proc read(var c: char); var value: int);
+  proc readname(proc read(var c: char); var value: name);
+  proc writebool(proc write(d: char); value: bool);
+  proc writeint(proc write(c: char); value, length: int);
+  proc writename(proc write(c: char); value: name);
+  proc writeline(proc write(c: char); value: line);
+  proc readsector(drive, sectorno: int;
+    var value: sector);
+  proc writesector(drive, sectorno: int; value: sector);
+  proc subset(first, last: char): charset;
+  proc load(title: name): program)
+
+
+const "table limits"
+  maxchar = 3500; maxname = 400; maxword = 503
+
+
+module "failure"
+
+* enum failure (charlimit, namelimit)
+
+* proc fail(reason: failure)
+  var text: line
+  begin
+    if reason = charlimit do
+      writeline(display, line('char limit.'))
+    else reason = namelimit do
+      writeline(display, line('name limit.'))
+    end;
+    halt
+  end
+
+begin skip end
+
+
+module "note output"
+
+  const notedrive = 0
+
+  var notes: name; file: stream;
+    prev_lineno: int
+
+  proc print(c: char)
+  begin write(file, c) end
+
+* enum errorkind (ambiguous3, declaration3, kind3,
+    padding3, range3, syntax3, trap3, undeclared3)
+
+* var errors: bool
+
+* proc noteerror(lineno: int; kind: errorkind)
+  var text: line
+  begin
+    if kind = ambiguous3 do
+      text := line('ambiguous name.')
+    else kind = declaration3 do
+      text := line('invalid declaration.')
+    else kind = kind3 do
+      text := line('invalid name kind.')
+    else kind = padding3 do
+      text := line('invalid padding.')
+    else kind = range3 do
+      text := line('out of range.')
+    else kind = syntax3 do
+      text := line('invalid syntax.')
+    else kind = trap3 do
+      text := line('invalid trap.')
+    else kind = undeclared3 do
+      text := line('undeclared name.')
+    end;
+    if lineno <> prev_lineno do
+      prev_lineno := lineno;
+      writeline(print, line('line .'));
+      writeint(print, lineno, 4); print(sp);
+      writeline(print, text); print(nl)
+    end;
+    errors := true
+  end
+
+* proc endnotes(errors: bool)
+  begin endwrite(file);
+    if errors do
+      writeline(display, line(
+        'compilation errors (see notes on disk)', nl))
+    else true do delete(notedrive, notes) end
+  end
+
+begin notes := name('notes'); create(notedrive, notes);
+  openwrite(file, notes); errors := false;
+  prev_lineno := -1
+end
+
+
+module "text input"
+
+  const em = char (25)
+
+  var text: name; input: stream; start: position
+
+* proc nextchar(var ch: char)
+  begin
+    if more(input) do
+      read(input, ch)
+    else true do
+      ch := em
+    end
+  end
+
+* proc rewind
+  begin move(input, start) end
+
+* proc endtext
+  begin endread(input) end
+
+begin writeline(display, line('  Text name = .'));
+  readname(accept, text);
+  openread(input, text);
+  start := mark(input)
+end
+
+
+module "code output"
+
+  var code: name; codedrive: int; output: stream
+
+* proc writecode(value: int)
+  begin write(output, char(value)) end
+
+* proc endcode(errors: bool)
+  begin
+    endwrite(output);
+    if errors do delete(codedrive, code) end
+  end
+
+begin writeline(display, line('  Code name = .'));
+  readname(accept, code);
+  writeline(display, line('  Code drive = .'));
+  readint(accept, codedrive);
+  create(codedrive, code);
+  openwrite(output, code)
+end
+
+
+module "word table"
+
+  array chartable [1:maxchar] (char)
+
+  record wordattr (wordlength, lastchar: int)
+
+  array wordtable [1:maxword] (wordattr)
+
+  var heap: chartable; top: int;
+    table: wordtable; size: int
+
+  proc key(word: line; length: int): int
+  const span = 26 "letters"
+  var hash, i: int
+  begin hash := 1; i := 0;
+    while i < length do
+      i := i + 1;
+      hash := hash *
+        (int(word[i]) mod span + 1) mod maxword
+    end;
+    val key := hash + 1
+  end
+
+  proc insert(word: line; length, index: int)
+  var m, n: int
+  begin top := top + length;
+    if top > maxchar do fail(charlimit) end;
+    m := length; n := top - m;
+    while m > 0 do
+      heap[m + n] := word[m]; m := m - 1
+    end;
+    table[index] := wordattr(length, top);
+    size := size + 1;
+    if size = maxname do fail(namelimit) end
+  end
+
+  proc found(word: line; length, index: int): bool
+  var same: bool; m, n: int
+  begin
+    if table[index].wordlength <> length do same := false
+    else true do
+      same := true; m := length;
+      n := table[index].lastchar - m;
+      while same and (m > 0) do
+        same := word[m] = heap[m + n]; m := m - 1
+      end
+    end;
+    val found := same
+  end
+
+* proc convert(word: line; length: int): int
+  var i: int; more: bool
+  begin i := key(word, length); more := true;
+    while more do
+      if table[i].wordlength = 0 do
+        insert(word, length, i);
+        val convert := i; more := false
+      else found(word, length, i) do
+        val convert := i; more := false
+      else true do i := i mod maxword + 1 end
+    end
+  end
+
+begin top := 0; size := maxword;
+  while size > 0 do
+    table[size] := wordattr(0, 0);
+    size := size - 1
+  end
+end
+
+
+module "nextsym"
+
+* enum symbol (
+    undefined_, address_, register_, constant_, char_,
+    "instruction types:"
+    instr_monadic_, instr_dyadic_, instr_register_,
+    instr_branch_, instr_call_, instr_return_,
+    instr_repeat_, instr_push_, instr_pop_,
+    "keywords:"
+    addr_, array_, const_, do_, instr_, pad_, reg_,
+    st_, text_, trap_, word_,
+    "other lexical symbols:"
+    plus_, minus_, equal_, comma_, colon_,
+    lparanth_, rparanth_, lbracket_, rbracket_,
+    eof_)
+
+* set symbolset(symbol)
+
+  const newline = char(10); endmedium = char(25);
+    space = ' '; quote = '"'; apostrophy = char(39);
+    maxint = 32767
+
+  record nameattr (namesym: symbol; namevalue: int)
+
+  array nametable[0:maxword] (nameattr)
+
+  var names: nametable
+
+* const noname = 0
+
+* var sym: symbol;
+    value, name: int
+
+  var lineno: int
+
+  set charset (char)
+
+  var alphanum, digits, graphic, letters, small_letters,
+    octals, special, stringchar: charset;
+
+    ch: char;
+    in_string: bool
+
+* proc error(e: errorkind)
+  begin noteerror(lineno, e) end
+
+  proc decimal
+  var i: int
+  begin
+    value := 0;
+    while ch in digits do
+      i := int(ch) - int('0');
+      if value <= (maxint - i) div 10 do
+        value := 10 * value + i; nextchar(ch)
+      else true do
+        error(range3);
+        while ch in digits do nextchar(ch) end
+      end
+    end
+  end
+
+  proc octal
+  begin
+    value := 0; nextchar(ch);
+    if ch in octals do
+      while (ch in octals) and (value <= #7777) do
+        value := 8 * value + (int(ch) - int('0'));
+        nextchar(ch)
+      end;
+      if (ch in octals) and (value <= #17777) do
+        value := #100000 + 8 * (value - #10000)
+          + (int(ch) - int('0'));
+        nextchar(ch)
+      end;
+      if ch in octals do
+        error(range3);
+        while ch in octals do nextchar(ch) end
+      end
+    else true do error(syntax3) end
+  end
+
+  proc nextstring
+  begin
+    if not (ch in stringchar) do
+      in_string := false; error(syntax3)
+    end;
+    if ch <> '[' do
+      value := int(ch); nextchar(ch)
+    else true do
+      nextchar(ch); decimal;
+      if ch = ']' do nextchar(ch)
+      else true do error(syntax3) end
+    end;
+    if ch = apostrophy do
+      in_string := false; nextchar(ch)
+    end
+  end
+
+* proc nextsym
+  var word: line; i: int
+  begin
+    if in_string do
+      nextstring
+    else true do
+      while ch = space do
+        nextchar(ch)
+      else ch = newline do
+        lineno := lineno + 1; nextchar(ch)
+      else ch = '$' do
+        while int(ch) >= 32 do nextchar(ch) end
+      end;
+      name := noname;
+      if ch in letters do
+        i := 0;
+        while ch in alphanum do
+          if ch in small_letters do
+            ch := char(int(ch) - 32)
+          end;
+          i := i + 1; word[i] := ch; nextchar(ch)
+        end;
+        name := convert(word, i);
+        sym := names[name].namesym;
+        value := names[name].namevalue
+      else ch = '(' do sym := lparanth_; nextchar(ch)
+      else ch = ')' do sym := rparanth_; nextchar(ch)
+      else ch = ',' do sym := comma_; nextchar(ch)
+      else ch = '[' do sym := lbracket_; nextchar(ch)
+      else ch = ']' do sym := rbracket_; nextchar(ch)
+      else ch = ':' do sym := colon_; nextchar(ch)
+      else ch in digits do sym := constant_; decimal
+      else ch = '+' do sym := plus_; nextchar(ch)
+      else ch = '-' do sym := minus_; nextchar(ch)
+      else ch = '=' do sym := equal_; nextchar(ch)
+      else ch = '#' do sym := constant_; octal
+      else ch = apostrophy do
+        sym := char_; in_string := true;
+        nextchar(ch); nextstring
+      else ch = endmedium do
+        sym := eof_
+      else true do
+        error(syntax3); nextchar(ch)
+      end
+    end
+  end
+
+* proc firstsym
+  begin rewind; lineno := 1; nextchar(ch); nextsym end
+
+* proc define(name: int; sym: symbol; value: int)
+  begin
+    names[name] := nameattr(sym, value)
+  end
+
+begin
+  name := maxword;
+  while name > 0 do
+    names[name] := nameattr(undefined_, 0);
+    name := name - 1
+  end;
+
+  small_letters := charset('abcdefghijklmnopqrstuvwxyz');
+  letters := charset('ABCDEFGHIJKLMNOPQRSTUVWXYZ') + small_letters;
+  digits := charset('0123456789');
+  alphanum := letters + digits + charset('_');
+  special := charset(apostrophy,
+    '!"#$%()*+,-./:;<=>?@[]_');
+  graphic := alphanum + special + charset(space);
+  octals := charset('01234567');
+  stringchar := graphic - charset(apostrophy)
+end
+
+
+module "keywords"
+
+* var sp_name: int
+
+  proc enter(word: line; length: int; sym: symbol; value: int)
+  begin
+    define(convert(word, length), sym, value)
+  end
+
+  proc enter2(word: line; length: int; sym: symbol; value: int)
+  const suffixlength = 5
+  array suffixtype[1:suffixlength] (char)
+  var suffix: suffixtype; i: int
+  begin
+    enter(word, length, sym, value);
+
+    suffix := suffixtype('_BYTE');
+    i := suffixlength;
+    while i > 0 do
+      word[length + i] := suffix[i]; i := i - 1
+    end;
+    enter(word, length + suffixlength, sym, value + #100000)
+  end
+
+begin
+  enter(line('ADDR'), 4, addr_, 0);
+  enter(line('ARRAY'), 5, array_, 0);
+  enter(line('CONST'), 5, const_, 0);
+  enter(line('DO'), 2, do_, 0);
+  enter(line('INSTR'), 5, instr_, 0);
+  enter(line('PAD'), 3, pad_, 0);
+  enter(line('REG'), 3, reg_, 0);
+  enter(line('ST'), 2, st_, 0);
+  enter(line('TEXT'), 4, text_, 0);
+  enter(line('TRAP'), 4, trap_, 0);
+  enter(line('WORD'), 4, word_, 0);
+
+  enter(line('EXTENDSIGN'), 10,     instr_monadic_, #006700);
+  enter(line('SWAPBYTES'), 9,       instr_monadic_, #000300);
+  enter2(line('ADDCARRY'), 8,       instr_monadic_, #005500);
+  enter2(line('CLEAR'), 5,          instr_monadic_, #005000);
+  enter2(line('DECREMENT'), 9,      instr_monadic_, #005300);
+  enter2(line('DOUBLE'), 6,         instr_monadic_, #006300);
+  enter2(line('HALVE'), 5,          instr_monadic_, #006200);
+  enter2(line('INCREMENT'), 9,      instr_monadic_, #005200);
+  enter2(line('NEGATE'), 6,         instr_monadic_, #005400);
+  enter2(line('NOT'), 3,            instr_monadic_, #005100);
+  enter2(line('ROTATELEFT'), 10,    instr_monadic_, #006100);
+  enter2(line('ROTATERIGHT'), 11,   instr_monadic_, #006000);
+  enter2(line('SUBTRACTCARRY'), 13, instr_monadic_, #005600);
+  enter2(line('TEST'), 4,           instr_monadic_, #005700);
+
+  enter(line('ADD'), 3,             instr_dyadic_, #060000);
+  enter(line('SUBTRACT'), 8,        instr_dyadic_, #160000);
+  enter2(line('ANDNOT'), 6,         instr_dyadic_, #040000);
+  enter2(line('COMPARE'), 7,        instr_dyadic_, #020000);
+  enter2(line('MOVE'), 4,           instr_dyadic_, #010000);
+  enter2(line('OR'), 2,             instr_dyadic_, #050000);
+  enter2(line('TESTBIT'), 7,        instr_dyadic_, #030000);
+
+  enter(line('DIVIDE'), 6,          instr_register_, #071000);
+  enter(line('DOUBLESHIFT'), 11,    instr_register_, #073000);
+  enter(line('MULTIPLY'), 8,        instr_register_, #070000);
+  enter(line('SHIFT'), 5,           instr_register_, #072000);
+
+  enter(line('BRANCH'), 6,          instr_branch_, #000400);
+  enter(line('IFCARRY'), 7,         instr_branch_, #103400);
+  enter(line('IFEQUAL'), 7,         instr_branch_, #001400);
+  enter(line('IFGREATER'), 9,       instr_branch_, #003000);
+  enter(line('IFHIGHER'), 8,        instr_branch_, #101000);
+  enter(line('IFLESS'), 6,          instr_branch_, #002400);
+  enter(line('IFLOWER'), 7,         instr_branch_, #103400);
+  enter(line('IFNOTCARRY'), 10,     instr_branch_, #103000);
+  enter(line('IFNOTEQUAL'), 10,     instr_branch_, #001000);
+  enter(line('IFNOTGREATER'), 12,   instr_branch_, #003400);
+  enter(line('IFNOTHIGHER'), 11,    instr_branch_, #101400);
+  enter(line('IFNOTLESS'), 9,       instr_branch_, #002000);
+  enter(line('IFNOTLOWER'), 10,     instr_branch_, #103000);
+  enter(line('IFNOTOVERFLOW'), 13,  instr_branch_, #102000);
+  enter(line('IFOVERFLOW'), 10,     instr_branch_, #102400);
+
+  enter(line('CALL'), 4,            instr_call_, 0);
+  enter(line('RETURN'), 6,          instr_return_, 0);
+  enter(line('REPEAT'), 6,          instr_repeat_, 0);
+  enter(line('PUSH'), 4,            instr_push_, 0);
+  enter(line('POP'), 3,             instr_pop_, 0);
+
+  sp_name := convert(line('SP'), 2)
+end
+
+
+var restart_symbols: symbolset
+
+var first_pass: bool;
+  sp_reg: int;
+  ptr: int
+
+proc emit(w: int)
+begin ptr := ptr + 2;
+  if not first_pass do
+    writecode(w)
+  end
+end
+
+proc name_error
+begin
+  if sym = undefined_ do error(undeclared3); nextsym
+  else name <> noname do error(kind3); nextsym
+  else true do error(syntax3) end
+end
+
+proc checksym(s: symbol)
+begin
+  if sym = s do nextsym
+  else true do error(syntax3) end
+end
+
+proc new_name: int
+begin
+  if (sym = undefined_) or not first_pass do
+    val new_name := name;
+    nextsym
+  else true do
+    val new_name := noname;
+    if name <> noname do error(ambiguous3); nextsym
+    else true do error(syntax3) end
+  end
+end
+
+proc try_address_name(var address: int): bool
+begin
+  if (sym = address_)
+      or (first_pass and (sym = undefined_)) do
+    address := value; val try_address_name := true;
+    nextsym
+  else true do
+    val try_address_name := false
+  end
+end
+
+proc address_name: int
+begin
+  if not try_address_name(val address_name) do
+    name_error; val address_name := 0
+  end
+end
+
+proc try_constant_symbol(var v: int): bool
+begin
+  if (sym = constant_) or (sym = char_) do
+    v := value; val try_constant_symbol := true;
+    nextsym
+  else true do
+    val try_constant_symbol := false
+  end
+end
+
+proc constant_symbol: int
+begin
+  if not try_constant_symbol(val constant_symbol) do
+    name_error; val constant_symbol := 0
+  end
+end
+
+proc constant_declaration
+var n, v: int
+begin nextsym;
+  n := new_name;
+  checksym(equal_);
+  v := constant_symbol;
+  if first_pass do
+    define(n, constant_, v)
+  end
+end
+
+proc register_declaration
+var n, v: int
+begin nextsym;
+  n := new_name;
+  checksym(lparanth_);
+  v := constant_symbol;
+  if (v < 0) or (v > 7) do
+    error(declaration3); v := 0
+  end;
+  checksym(rparanth_);
+  if first_pass do
+    define(n, register_, v);
+    if n = sp_name do sp_reg := v end
+  end
+end
+
+proc text_declaration
+begin nextsym;
+  define(new_name, address_, ptr);
+  checksym(equal_);
+  if sym <> char_ do
+    error(syntax3)
+  end;
+  while sym = char_ do
+    emit(value); nextsym
+  end
+end
+
+proc word_declaration
+begin nextsym;
+  define(new_name, address_, ptr);
+  emit(0)
+end
+
+proc array_declaration
+var n: int
+begin nextsym;
+  define(new_name, address_, ptr);
+  checksym(lbracket_);
+  n := constant_symbol;
+  if n < 1 do
+    error(declaration3)
+  end;
+  checksym(rbracket_);
+  while n > 0 do
+    emit(0); n := n - 1
+  end
+end
+
+proc address_list_declaration
+begin nextsym;
+  define(new_name, address_, ptr);
+  checksym(equal_);
+  emit(address_name);
+  while sym = comma_ do
+    nextsym; emit(address_name)
+  end
+end
+
+proc pad_sentence
+var n: int
+begin nextsym;
+  n := constant_symbol;
+  if (n < ptr) or (n mod 2 <> 0) do
+    error(padding3)
+  end;
+  while (ptr < n) do emit(0) end
+end
+
+proc trap_sentence
+var n: int
+begin nextsym;
+  n := constant_symbol;
+  if (n < ptr) or (n mod 4 <> 0) do
+    error(trap3)
+  end;
+  while ptr < n do emit(0) end;
+  checksym(colon_);
+  emit(address_name);
+  checksym(comma_);
+  emit(constant_symbol)
+end
+
+record operand(
+  modebits: int;
+  has_imm: bool;
+  imm: int
+)
+
+proc register: int
+begin
+  if sym = register_ do
+    val register := value; nextsym
+  else true do
+    name_error; val register := 0
+  end
+end
+
+proc try_constant_operand(var v: int): bool
+begin
+  val try_constant_operand := try_address_name(v)
+    or try_constant_symbol(v)
+end
+
+proc apply_sign(var v: int; s: symbol)
+begin
+  if s = minus_ do
+    if v = #100000 do
+      error(range3)
+    else true do
+      v := -v
+    end
+  end
+end
+
+proc composite_address(var op: operand; r: int)
+var imm: int; sign: symbol
+begin
+  sign := sym; nextsym;
+  if (sign <> minus_) and (sign <> plus_) do
+    error(syntax3)
+  end;
+  if try_constant_operand(imm) do
+    apply_sign(imm, sign);
+    op := operand(#60 + r, true, imm)
+  else sign = minus_ do
+    op := operand(#40 + r, false, 0)
+  else true do
+    op := operand(#20 + r, false, 0)
+  end
+end
+
+proc indirect_address(var op: operand)
+begin nextsym;
+  checksym(lbracket_);
+  composite_address(op, register);
+  op.modebits := op.modebits + #10;
+  checksym(rbracket_)
+end
+
+proc register_address(var op: operand; r: int)
+begin nextsym;
+  if (sym = plus_) or (sym = minus_) do
+    composite_address(op, r)
+  else true do
+    op := operand(#10 + r, false, 0)
+  end
+end
+
+proc direct_address(var op: operand)
+var imm: int
+begin
+  if sym = register_ do
+    register_address(op, value)
+  else try_constant_operand(imm) do
+    op := operand(#37, true, imm)
+  else true do
+    name_error; op := operand(0, false, 0)
+  end
+end
+
+proc location_symbol(var op: operand)
+begin nextsym;
+  checksym(lbracket_);
+  if sym = st_ do
+    indirect_address(op)
+  else true do
+    direct_address(op)
+  end;
+  checksym(rbracket_)
+end
+
+proc variable_symbol(var op: operand)
+begin
+  if sym = register_ do
+    op := operand(value, false, 0); nextsym
+  else sym = st_ do
+    location_symbol(op)
+  else true do
+    name_error; op := operand(0, false, 0)
+  end
+end
+
+proc value_operand(var op: operand)
+var v: int; sign: symbol
+begin
+  if (sym = register_) or (sym = st_) do
+    variable_symbol(op)
+  else true do
+    if (sym = plus_) or (sym = minus_) do
+      sign := sym; nextsym
+    else true do
+      sign := plus_
+    end;
+
+    if not try_constant_operand(v) do
+      name_error
+    end;
+    apply_sign(v, sign);
+    op := operand(#27, true, v)
+  end
+end
+
+proc emit_imm(var op: operand)
+begin
+  if op.has_imm do emit(op.imm) end
+end
+
+proc instr_monadic(instr: int)
+var op: operand
+begin nextsym;
+  checksym(lparanth_);
+  variable_symbol(op);
+  checksym(rparanth_);
+  emit(instr + op.modebits);
+  emit_imm(op)
+end
+
+proc instr_dyadic(instr: int)
+var op1, op2: operand
+begin nextsym;
+  checksym(lparanth_);
+  value_operand(op1);
+  checksym(comma_);
+  variable_symbol(op2);
+  checksym(rparanth_);
+  emit(instr + 64 * op1.modebits + op2.modebits);
+  emit_imm(op1);
+  emit_imm(op2)
+end
+
+proc instr_register(instr: int)
+var op: operand
+begin nextsym;
+  checksym(lparanth_);
+  value_operand(op);
+  checksym(comma_);
+  emit(instr + 64 * register + op.modebits);
+  checksym(rparanth_);
+  emit_imm(op)
+end
+
+proc instr_branch(instr: int)
+var a, ofs: int
+begin nextsym;
+  checksym(lparanth_);
+  a := address_name;
+  if first_pass do
+    ofs := 0
+  else true do
+    ofs := (a - ptr - 2) div 2;
+    if (ofs < -128) or (ofs > 127) do
+      error(range3); ofs := 0
+    end;
+    ofs := (ofs + 256) mod 256
+  end;
+  checksym(rparanth_);
+  emit(instr + ofs)
+end
+
+proc instr_call
+begin nextsym;
+  checksym(lparanth_);
+  emit(#004737);
+  emit(address_name);
+  checksym(rparanth_)
+end
+
+proc instr_return
+begin nextsym;
+  emit(#000207)
+end
+
+proc instr_repeat
+var a, r, ofs: int
+begin nextsym;
+  checksym(lparanth_);
+  a := address_name;
+  if first_pass do
+    ofs := 0
+  else true do
+    ofs := (ptr + 2 - a) div 2;
+    if (ofs < 0) or (ofs >= 64) do
+      error(range3); ofs := 0
+    end
+  end;
+  checksym(comma_);
+  r := register;
+  checksym(rparanth_);
+  emit(#077000 + r * 64 + ofs)
+end
+
+proc instr_push
+var op: operand
+begin nextsym;
+  if sp_reg < 0 do error(undeclared3) end;
+  checksym(lparanth_);
+  value_operand(op);
+  checksym(rparanth_);
+  emit(#010040 + 64 * op.modebits + sp_reg);
+  emit_imm(op)
+end
+
+proc instr_pop
+var n: int
+begin nextsym;
+  if sp_reg < 0 do error(undeclared3) end;
+  checksym(lparanth_);
+  n := constant_symbol;
+  checksym(rparanth_);
+  if n = 1 do
+    emit(#005720 + sp_reg)
+  else n > 1 do
+    emit(#062700 + sp_reg); emit(2*n)
+  else true do
+    error(range3)
+  end
+end
+
+proc encoded_instruction
+begin nextsym;
+  checksym(lparanth_);
+  emit(constant_symbol);
+  checksym(rparanth_)
+end
+
+proc instruction_sentence
+begin nextsym;
+  define(new_name, address_, ptr);
+  checksym(colon_);
+  while sym = instr_monadic_ do instr_monadic(value)
+  else sym = instr_dyadic_ do instr_dyadic(value)
+  else sym = instr_register_ do instr_register(value)
+  else sym = instr_branch_ do instr_branch(value)
+  else sym = instr_call_ do instr_call
+  else sym = instr_return_ do instr_return
+  else sym = instr_repeat_ do instr_repeat
+  else sym = instr_push_ do instr_push
+  else sym = instr_pop_ do instr_pop
+  else sym = instr_ do encoded_instruction
+  else not (sym in restart_symbols) do
+    error(syntax3);
+    while not (sym in restart_symbols) do nextsym end
+  end
+end
+
+proc program
+begin firstsym; ptr := 0;
+  while sym = const_ do constant_declaration
+  else sym = reg_ do register_declaration
+  else sym = text_ do text_declaration
+  else sym = word_ do word_declaration
+  else sym = array_ do array_declaration
+  else sym = addr_ do address_list_declaration
+  else sym = do_ do instruction_sentence
+  else sym = pad_ do pad_sentence
+  else sym = trap_ do trap_sentence
+  else sym <> eof_ do
+    error(syntax3); nextsym;
+    while not (sym in restart_symbols) do nextsym end
+  end
+end
+
+begin
+  restart_symbols := symbolset(const_, reg_, text_, word_,
+    array_, addr_, do_, pad_, trap_, instr_monadic_,
+    instr_dyadic_, instr_branch_, instr_call_,
+    instr_return_, instr_repeat_, instr_push_, instr_pop_,
+    instr_);
+
+  sp_reg := -1;
+  first_pass := true; program;
+  if not errors do
+    first_pass := false; program
+  end;
+
+  endtext; endcode(errors); endnotes(errors)
+end

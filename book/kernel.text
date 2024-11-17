@@ -1,0 +1,1744 @@
+$ "Edison kernel for the PDP 11/23 computer
+$        with RX02 floppy disk loader
+
+$  30 October 1981
+
+$  Copyright (c) 1981 Per Brinch Hansen"
+
+reg w(0)
+reg x(1)
+reg y(2)
+reg sp(6)
+reg pc(7)
+
+const skip = #240
+const kernelmode = #340
+do loadpoint:
+  instr(skip)
+  branch(load2)
+
+trap  #4: processor_trap, kernelmode
+trap #10: instruction_trap, kernelmode
+trap #14: disable_trap, kernelmode
+trap #24: power_trap, kernelmode
+
+                              $ proc kernel
+
+const maxaddr = #157776       $ const maxaddr = 9999
+                              $ array store [0:maxaddr]
+                              $   (int)
+                              $ var st: store
+
+const sectorlength = 128      $ module "RX02 loader"
+const disable_interrupts = #3
+do load2:
+  move(maxaddr, sp)
+  instr(disable_interrupts)
+do disable_trap:
+  push(1)                     $ * const
+  push(4)                     $     status = #177170;
+  push(sectorlength)          $     buffer = #177172;
+  call(readdisk)              $     ready = #200;
+  branch(load3)               $     done = #40;
+                              $     error = #100000;
+const status0 = #177170       $     read = #7;
+const buffer0 = #177172       $     empty = #3;
+const ready0 = #200           $     sectorlength = 64;
+const done0 = #40             $     kernelsector = 26;
+const error0 = #100000        $     minaddr = 999
+const read0 = #7
+const empty0 = #3
+const sector = 64
+const kernelsector = 26
+
+do awaitready:                $ proc awaitready
+  testbit(ready0, st[status0])$ begin
+  ifequal(awaitready)         $   while not sense(status,
+  return                      $     ready) do skip end
+                              $ end
+
+do readdisk:                  $ proc readdisk(trackaddr,
+  move(read0, st[status0])    $   sectaddr, addr: int)
+  call(awaitready)            $ begin place(status, read);
+  move(st[sp+4], st[buffer0]) $   awaitready;
+  call(awaitready)            $   place(buffer, sectaddr);
+  move(st[sp+6], st[buffer0]) $   awaitready;
+do readdisk2:                 $   place(buffer, trackaddr);
+  testbit(done0, st[status0]) $   while not sense(status,
+  ifequal(readdisk2)          $     done) do skip end;
+  move(empty0, st[status0])   $   place(status, empty);
+  call(awaitready)            $   awaitready;
+  move(sector, st[buffer0])   $   place(buffer,
+  call(awaitready)            $     sectorlength);
+  move(st[sp+2], st[buffer0]) $   awaitready;
+do readdisk3:                 $   place(buffer, addr);
+  testbit(done0, st[status0]) $   while not sense(status,
+  ifequal(readdisk3)          $     done) do skip end
+  return                      $ end
+
+$ "end of autoload sector"
+
+do readsector:                $ * proc readsector(
+  clear(w)                    $     sectorno, addr: int)
+  move(st[sp+4], x)           $ var trackaddr,
+  divide(26, w)               $   sectaddr: int
+  push(w)                     $ begin
+  clear(w)                    $   trackaddr :=
+  move(3, x)                  $     sectorno div 26;
+  multiply(st[sp+6], x)       $   sectaddr :=
+  divide(26, w)               $     3 * sectorno
+  increment(x)                $       mod 26 + 1;
+  push(x)                     $   readdisk(sectaddr,
+  push(st[sp+6])              $     trackaddr, addr)
+  call(readdisk)              $ end
+  pop(3)
+  return
+
+word adr                      $ var addr, sectorno: int
+word sectorno                 $ begin
+
+do load3:                     $   readdisk(1, 4,
+  move(kernelsector,          $     sectorlength);
+    st[sectorno])             $   sectorno :=
+  increment(st[sectorno])     $     kernelsector + 2;
+  move(sectorlength, st[adr]) $   addr := 2 * sectorlength;
+do load4:                     $   while addr < minaddr do
+  increment(st[sectorno])     $     readsector(sectorno,
+  add(sectorlength, st[adr])  $       addr);
+  compare(minaddr, st[adr])   $     sectorno :=
+  ifnotgreater(restart)       $       sectorno + 1;
+  push(st[sectorno])          $     addr := addr +
+  push(st[adr])               $       sectorlength
+  call(readsector)            $   end
+  pop(2)                      $ end "loader"
+  branch(load4)
+
+do restart:
+  move(stackbottom, sp)
+  move(begin, pc)
+
+const none = 0                $ const none = 0;
+const nl = 10                 $   nl = char(10); sp = ' ';
+const esc = 27                $   esc = char(27);
+const pdp11 = 1               $   pdp11 = true;
+const maxrow = 24             $   maxrow = 24;
+const maxcolumn = 80          $   maxcolumn = 80;
+const space = ' '             $   textlength = 80 "char";
+const namelength = 24         $   namelength = 12 "char";
+const setlength = 16          $   setlength = 8;
+const setlimit = 127          $   setlimit = 127;
+const cursorno = 0            $   cursorno = 0;
+const eraseno = 1             $   eraseno = 1;
+const displayno = 2           $   displayno = 2;
+const acceptno = 3            $   acceptno = 3;
+const printno = 4             $   printno = 4;
+const getno = 5               $   getno = 5;
+const putno = 6               $   putno = 6;
+const paramlength = 34        $   paramlength = 17
+const maxparam = 7            $     "words";
+const maxproc = 5             $   maxparam = 7
+const name = 12               $     "procedures";
+const settype = 8             $   maxproc = 5
+const statelength = 8         $     "processes";
+const queue = 20              $   overflow = false
+
+                              $ array text
+                              $   [1:textlength] (char)
+                              $ array name
+                              $   [1:namelength] (char)
+                              $ set settype1 (int)
+                              $ array settype2
+                              $   [1:setlength] (int)
+                              $ record procstate(
+                              $   bx, sx, tx, px: int)
+                              $ array queue [1:maxproc]
+                              $   (procstate)
+
+pad #400
+addr opcode =                 $ enum opcode(
+  addx,                       $   "standard codes" add4,
+  alsox, andx, assign,        $   also4, and4, assign4,
+  blank, cobeginx,            $   blank4, cobegin4,
+  constant, construct,        $   constant4, construct4,
+  difference, dividex,        $   difference4, divide4,
+  dox, elsex, endcode,        $   do4, else4, endcode4,
+  endlib, endproc,            $   endlib4, endproc4,
+  endwhen, equal, field,      $   endwhen4, equal4, field4,
+  goto, greater, inx,         $   goto4, greater4, in4,
+  index, instance,            $   index4, instance4,
+  intersection, less,         $   intersection4, less4,
+  libproc, minusx,            $   libproc4, minus4,
+  modulo, multiplyx,          $   modulo4, multiply4,
+  newline, notx,              $   newline4, not4,
+  notequal, notgreater,       $   notequal4, notgreater4,
+  notless, orx,               $   notless4, or4,
+  paramarg, paramcall,        $   paramarg4, paramcall4,
+  procarg, proccall,          $   procarg4, proccall4,
+  procedure, process,         $   procedure4, process4,
+  subtractx, union,           $   subtract4, union4,
+  valspace, value,            $   valspace4, value4,
+  variable, wait,             $   variable4, wait4,
+  whenx, addrx, haltx,        $   when4, addr4, halt4,
+  obtainx, placex, sensex,    $   obtain4, place4, sense4,
+                              $   "extra codes"
+  elemassign, elemvalue,      $   elemassign4, elemvalue4,
+  localcase, localset,        $   localcase4, localset4,
+  localvalue, localvar,       $   localvalue4, localvar4,
+  outercall, outercase,       $   outercall4, outercase4,
+  outerparam, outerset,       $   outerparam4, outerset4,
+  outervalue, outervar,       $   outervalue4, outervar4,
+  setconst, singleton,        $   setconst4, singleton4,
+  stringconst                 $   stringconst4)
+
+array stack [99]
+word stackbottom
+
+array q [queue]               $ var q: queue;
+word this                     $   this,
+word tasks                    $   tasks: int;
+word stacktop                 $   stacktop: int;
+word progtop                  $   progtop: int;
+reg b(3)                      $   b, s, t, p: int
+reg s(4)
+word t
+reg p(5)
+
+                              $ proc loadset(addr: int;
+                              $   var value: settype1)
+                              $ var i: int
+                              $ begin i := 0;
+                              $   while i < setlength do
+                              $     i := i + 1;
+                              $     value:settype2[i] :=
+                              $       st[addr + i - 1]
+                              $   end
+                              $ end
+
+                              $ proc storeset(addr: int;
+                              $   var value: settype1)
+                              $ var i: int
+                              $ begin i := 0;
+                              $   while i < setlength do
+                              $     i := i + 1;
+                              $     st[addr + i - 1] :=
+                              $       value:settype2[i]
+                              $   end
+                              $ end
+
+do loadname:                  $ proc loadname(addr: int;
+  move(name, w)               $   var value: name)
+  move(st[sp+2], y)           $ var i: int
+  move(st[sp+4], x)           $ begin i := 0;
+do loadname2:                 $   while i < namelength do
+  move(st[x+], st[y+])        $     i := i + 1;
+  repeat(loadname2, w)        $     value[i] := char(
+  return                      $       st[addr + i - 1])
+                              $   end
+                              $ end
+
+do findname:                  $ proc findname(var id: name)
+  move(st[t], x)              $ var addr: int
+  compare(1, st[tasks])       $ begin
+  ifequal(findname2)          $   if tasks = 1 do
+  move(st[progtop], x)        $     addr := t + 1
+do findname2:                 $   else true do
+  test(st[x+])                $     addr := progtop + 1
+do findname3:                 $   end;
+  compare(x, p)               $   while addr < p do
+  ifnotlower(findname4)       $     loadname(addr, id);
+  push(x)                     $     addr :=
+  push(st[sp+4])              $       addr + namelength;
+  call(loadname)              $     addr :=
+  pop(1)                      $       addr + st[addr]
+  move(st[sp+], x)            $   end
+  add(namelength, x)          $ end
+  add(st[x], x)
+  branch(findname3)
+do findname4:
+  return
+
+const status1 = #177564       $ proc write(value: char)
+const buffer1 = #177566       $ const status = #177564;
+const ready1 = #200           $   buffer = #177566;
+do write:                     $   ready = #200
+  testbit(ready1, st[status1])$ begin
+  ifequal(write)              $   while not
+  move(st[sp+2],              $     sense(status, read)
+    st[buffer1])              $       do skip end;
+  return                      $   place(buffer, int(value))
+                              $ end
+
+const lf = nl                 $ proc writechar(value: char)
+const cr = 13                 $ const lf = nl;
+do writechar:                 $   cr = char(13)
+  compare(lf, st[sp+2])       $ begin
+  ifnotequal(writechar2)      $   if value = lf do
+  push(cr)                    $     write(cr)
+  call(write)                 $   end;
+  pop(1)                      $   write(value)
+do writechar2:                $ end
+  push(st[sp+2])
+  call(write)
+  pop(1)
+  return
+
+do writetext:                 $ proc writetext(value: text)
+  move(st[st[sp+2]], w)       $ var i: int; c: char
+  compare('#', w)             $ begin i := 1;
+  ifequal(writetext2)         $   c := value[1];
+  push(w)                     $   while c <> '#' do
+  call(writechar)             $     writechar(c);
+  pop(1)                      $     i := i + 1;
+  add(2, st[sp+2])            $     c := value[i]
+  branch(writetext)           $   end
+do writetext2:                $ end
+  return
+
+word i1                       $ proc writeint(value: int)
+do writeint:                  $ array table [1:6] (char)
+  clear(st[i1])               $ var no: table; i: int
+  move(st[sp+2], w)           $ begin "value >= 0"
+do writeint2:                 $   if value = 0 do
+  increment(st[i1])           $     i := 1; no[1] := '0'
+  move(w, x)                  $   else value > 0 do
+  extendsign(w)               $     i := 0;
+  divide(10, w)               $     while value > 0 do
+  add('0', x)                 $       i := i + 1;
+  push(x)                     $       no[i] := char(
+  test(w)                     $         value mod 10
+  ifnotequal(writeint2)       $         + int('0'));
+do writeint3:                 $       value :=
+  call(writechar)             $         value div 10
+  pop(1)                      $     end
+  decrement(st[i1])           $   end;
+  ifnotequal(writeint3)       $   while i > 0 do
+  return                      $     writechar(no[i]);
+                              $     i := i - 1
+                              $   end
+                              $ end
+
+word i2                       $ proc writename(value: name)
+do writename:                 $ var i: int; c: char
+  move(name, st[i2])          $ begin
+do writename2:                $   i := 0;
+  move(st[st[sp+2]], w)       $   while i < namelength do
+  compare(space, w)           $     i := i + 1;
+  ifequal(writename3)         $     c := value[i];
+  push(w)                     $     if c <> sp do
+  call(writechar)             $       writechar(c)
+  pop(1)                      $     end
+do writename3:                $   end
+  add(2, st[sp+2])            $ end
+  decrement(st[i2])
+  ifnotequal(writename2)
+  return
+
+const status2 = #177560       $ proc readx(var value: char)
+const buffer2 = #177562       $ const status = #177560;
+const ready2 = #200           $   buffer = #177562;
+do read:                      $   ready = #200
+  testbit(ready2, st[status2])$ begin
+  ifequal(read)               $   while not
+  move(st[sp+2], x)           $     sense(status, ready)
+  move(st[buffer2], st[x])    $   do skip end;
+  andnot(#177600, st[x])      $   obtain(buffer,
+  return                      $     value:int);
+                              $   value := char(
+                              $     int(value) mod 128)
+                              $ end
+
+text pausetext =              $ proc pause
+  'push return to continue#'  $ var response: char
+word response                 $ begin
+do pause:                     $   writetext(text(
+  push(pausetext)             $     'push return to',
+  call(writetext)             $     ' continue#'));
+  push(response)              $   readx(response);
+  call(read)                  $   writechar(nl)
+  push(nl)                    $ end
+  call(writechar)
+  pop(3)
+  return
+
+text linetext = ' line [7]#'  $ proc stop(lineno: int;
+word ln                       $   reason: text)
+array id1 [name]              $ var id: name
+do stop:                      $ begin
+  push(id1)                   $   findname(id);
+  call(findname)              $   writechar(nl);
+  pop(1)                      $   writename(id);
+  push(nl)                    $   writetext(text(
+  call(writechar)             $     ' line #'));
+  pop(1)                      $   writeint(lineno);
+  push(id1)                   $   writechar(sp);
+  call(writename)             $   writetext(reason);
+  pop(1)                      $   writechar(nl);
+  push(linetext)              $   halt
+  call(writetext)             $ end
+  pop(1)
+  push(st[ln])
+  call(writeint)
+  pop(1)
+  push(space)
+  call(writechar)
+  pop(1)
+  push(st[sp+2])
+  call(writetext)
+  pop(1)
+  push(nl)
+  call(writechar)
+  pop(1)
+  move(restart, pc)
+
+text processortext =          $ proc processor_trap
+  'processor trap#'           $ "called by processor only"
+do processor_trap:            $ begin stop(1, text(
+  move(1, st[ln])             $   'processor trap#'))
+  push(processortext)         $ end
+  call(stop)
+
+text instructiontext =        $ proc instruction_trap
+  'instruction trap#'         $ "called by processor only"
+do instruction_trap:          $ begin stop(1, text(
+  move(1, st[ln])             $   'instruction trap#'))
+  push(instructiontext)       $ end
+  call(stop)
+
+text powertext =              $ proc power_trap
+  'power trap#'               $ "called by processor only"
+do power_trap:                $ begin stop(1, text(
+  move(1, st[ln])             $   'power trap#'))
+  push(powertext)             $ end
+  call(stop)
+
+text processtext =            $ proc processlimit(
+  'process limit exceeded#'   $   lineno: int)
+do processlimit:              $ begin stop(lineno, text(
+  push(processtext)           $   'process limit',
+  call(stop)                  $   ' exceeded#'))
+                              $ end
+
+text vartext =                $ proc variablelimit(
+  'variable limit exceeded#'  $   lineno: int)
+do variablelimit:             $ begin stop(lineno, text(
+  push(vartext)               $   'variable limit',
+  call(stop)                  $   ' exceeded#'))
+                              $ end
+
+text rangetext =              $ proc rangeerror(
+  'range limit exceeded#'     $   lineno: int)
+do rangeerror:                $ begin stop(lineno, text(
+  push(rangetext)             $   'range limit exceeded#'))
+  call(stop)                  $ end
+
+text calltext =               $ proc callerror(lineno: int)
+  'invalid program call#'     $ begin stop(lineno, text(
+do callerror:                 $   'invalid program call#'))
+  push(calltext)              $ end
+  call(stop)
+
+const maxcode = 24576         $ const maxcode = 12288
+do moveprogram:               $ proc moveprogram
+  subtract(maxcode, s)        $ var m: int
+  move(st[s+2], w)            $ begin
+  subtract(namelength, s)     $   m := st[s - maxcode + 1]
+  add(namelength, w)          $     + namelength;
+  move(s, x)                  $   s := s - maxcode
+  add(w, x)                   $     - namelength;
+  add(2, x)                   $   t := t - m;
+  move(st[t], y)              $   while m > 0 do
+  add(2, y)                   $     st[t + m] :=
+  subtract(w, st[t])          $       st[s + m];
+  halve(w)                    $     m := m - 1
+do moveprogram2:              $   end
+  move(st[x-], st[y-])        $ end
+  repeat(moveprogram2, w)
+  return
+
+const progsector = 90         $ proc loadprogram
+word sectorno1                $ const progsector = 90
+word addr1                    $ var sectorno, addr: int
+do loadprogram:               $ begin addr := s + 1;
+  move(s, st[addr1])          $   s := s + namelength +
+  add(2, st[addr1])           $     maxcode;
+  add(maxcode, s)             $   sectorno := progsector;
+  add(namelength, s)          $   while addr < s do
+  move(progsector,            $     readsector(sectorno,
+    st[sectorno1])            $       addr);
+do loadprogram2:              $     sectorno := sectorno
+  compare(st[addr1], s)       $       + 1;
+  ifnotless(loadprogram3)     $     addr := addr +
+  push(st[sectorno1])         $       sectorlength
+  push(st[addr1])             $   end;
+  call(readsector)            $   moveprogram
+  pop(2)                      $ end
+  increment(st[sectorno1])
+  add(sectorlength, st[addr1])
+  branch(loadprogram2)
+do loadprogram3:
+  call(moveprogram)
+  return
+
+do resume:                    $ proc resume
+  move(st[this], x)           $ begin
+  decrement(x)                $   b := q[this].bx;
+  shift(3, x)                 $   s := q[this].sx;
+  add(q, x)                   $   t := q[this].tx;
+  move(st[x+], b)             $   p := q[this].px
+  move(st[x+], s)             $ end
+  move(st[x+], st[t])
+  move(st[x+], p)
+  return
+
+do preempt:                   $ proc preempt
+  move(st[this], x)           $ begin
+  decrement(x)                $   q[this].bx := b;
+  shift(3, x)                 $   q[this].sx := s;
+  add(q, x)                   $   q[this].tx := t;
+  move(b, st[x+])             $   q[this].px := p
+  move(s, st[x+])             $ end
+  move(st[t], st[x+])
+  move(p, st[x+])
+  return
+
+do initialize:                $ proc initialize
+  move(1, st[this])           $ begin this := 1;
+  move(1, st[tasks])          $   tasks := 1;
+  move(minaddr, b)            $   b := minaddr +
+  add(paramlength, b)         $     paramlength;
+  move(pdp11, st[b-34])       $   st[b - 17] :=
+  move(maxrow, st[b-32])      $     int(pdp11);
+  move(maxcolumn, st[b-30])   $   st[b - 16] := maxrow;
+  move(cursorno, st[b-26])    $   st[b - 15] := maxcolumn;
+  move(eraseno, st[b-22])     $   st[b - 13] := cursorno;
+  move(displayno, st[b-18])   $   st[b - 11] := eraseno;
+  move(acceptno, st[b-14])    $   st[b - 9] := displayno;
+  move(printno, st[b-10])     $   st[b - 7] := acceptno;
+  move(getno, st[b-6])        $   st[b - 5] := printno;
+  move(putno, st[b-2])        $   st[b - 3] := getno;
+  move(b, s)                  $   st[b - 1] := putno;
+  add(8, s)                   $   s := b + 4;
+  move(none, st[s])           $   st[s] := none
+  move(maxaddr, st[t])        $     "dummy return";
+  call(loadprogram)           $   t := maxaddr;
+  move(st[t], p)              $   loadprogram;
+  add(namelength, p)          $   p := t + namelength
+  add(4, p)                   $     + 2
+  return                      $ end
+
+$ "procedure parameters"
+
+do cursor:                    $ proc cursor
+  subtract(4, s)              $ var row, column: int
+  push(esc)                   $ begin
+  call(write)                 $   s := s - 2;
+  push('Y')                   $   row := st[s + 1];
+  call(write)                 $   column := st[s + 2];
+  push(st[s+2])               $   write(esc);
+  add(31, st[sp])             $   write('Y');
+  call(write)                 $   write(char(31 + row));
+  push(st[s+4])               $   write(
+  add(31, st[sp])             $     char(31 + column))
+  call(write)                 $ end
+  pop(4)
+  return
+
+do erase:                     $ proc erase
+  push(esc)                   $ begin
+  call(write)                 $   write(esc);
+  push('J')                   $   write('J')
+  call(write)                 $ end
+  pop(2)
+  return
+
+do display:                   $ proc display
+  push(st[s])                 $ var value: char
+  call(write)                 $ begin value := char(st[s]);
+  pop(1)                      $   write(value);
+  subtract(2, s)              $   s := s - 1
+  return                      $ end
+
+do accept:                    $ proc accept
+  push(st[s])                 $ var addr: int
+  call(read)                  $ begin addr := st[s];
+  pop(1)                      $   readx(st[addr]:char);
+  subtract(2, s)              $   s := s - 1
+  return                      $ end
+
+const status3 = #176504       $ proc print
+const buffer3 = #176506       $ const status = #176504;
+const ready3 = #200           $   buffer = #176506;
+do print:                     $   ready3 = #200
+  testbit(ready3, st[status3])$ var value: char
+  ifequal(print)              $ begin value := char(st[s]);
+  move(st[s], st[buffer3])    $   while not
+  subtract(2, s)              $     sense(status, ready)
+  return                      $       do skip end;
+                              $   place(buffer,
+                              $     int(value));
+                              $   s := s - 1
+                              $ end
+
+                              $ proc diskwait(result: int)
+                              $ begin
+                              $   while not sense(status,
+                              $     result) do skip end
+                              $ end
+
+text disktext =               $ proc disktransfer(oper,
+  '[10]disk error #'          $   driveno, sectorno: int)
+do disktransfer:              $ var again: bool
+  testbit(done0, st[status0]) $ begin again := true;
+  ifequal(disktransfer)       $   while again do
+  move(st[sp+4], w)           $     diskwait(done);
+  shift(4, w)                 $     place(status, oper
+  add(st[sp+6], w)            $       + 16 * driveno);
+  move(w, st[status0])        $     diskwait(ready);
+do disktransfer2:             $     place(buffer,
+  testbit(ready0, st[status0])$       3 * sectorno mod 26
+  ifequal(disktransfer2)      $         + 1);
+  clear(w)                    $     diskwait(ready);
+  move(3, x)                  $     place(buffer,
+  multiply(st[sp+2], x)       $       sectorno div 26);
+  divide(26, w)               $     diskwait(done);
+  increment(x)                $     again :=
+  move(x, st[buffer0])        $       sense(status, error);
+do disktransfer3:             $     if again do
+  testbit(ready0, st[status0])$       writetext(text(nl,
+  ifequal(disktransfer3)      $         'disk error #'));
+  clear(w)                    $       pause
+  move(st[sp+2], x)           $     end
+  divide(26, w)               $   end
+  move(w, st[buffer0])        $ end
+do disktransfer4:
+  testbit(done0, st[status0])
+  ifequal(disktransfer4)
+  testbit(error0, st[status0])
+  ifequal(disktransfer5)
+  push(disktext)
+  call(writetext)
+  pop(1)
+  call(pause)
+  branch(disktransfer)
+do disktransfer5:
+  return
+
+do get:                       $ proc get
+  subtract(6, s)              $ var driveno, sectorno,
+  push(read0)                 $   count, addr: int
+  push(st[s+2])               $ begin s := s - 3;
+  push(st[s+4])               $   driveno := st[s + 1];
+  call(disktransfer)          $   sectorno := st[s + 2];
+  pop(3)                      $   addr := st[s + 3];
+  move(empty0, st[status0])   $   disktransfer(read,
+do get2:                      $     driveno, sectorno);
+  testbit(ready0, st[status0])$   place(status, empty);
+  ifequal(get2)               $   diskwait(ready);
+  move(sector, st[buffer0])   $   place(buffer,
+do get3:                      $     sectorlength);
+  testbit(ready0, st[status0])$   diskwait(ready);
+  ifequal(get3)               $   place(buffer, addr);
+  move(st[s+6], st[buffer0])  $   diskwait(done)
+do get4:                      $ end
+  testbit(done0, st[status0])
+  ifequal(get4)
+  return
+
+const write0 = #5             $ proc put
+const fill0 = #1              $ const write = #5;
+do put:                       $   fill = #1
+  subtract(sectorlength, s)   $ var driveno, sectorno,
+  subtract(4, s)              $   count, addr: int
+  move(s, x)                  $ begin
+  add(6, x)                   $   s := s - sectorlength
+  move(fill0, st[status0])    $    - 2;
+do put2:                      $   driveno := st[s + 1];
+  testbit(ready0, st[status0])$   sectorno := st[s + 2];
+  ifequal(put2)               $   addr := s + 3;
+  move(sector, st[buffer0])   $   place(status, fill);
+do put3:                      $   diskwait(ready);
+  testbit(ready0, st[status0])$   place(buffer,
+  ifequal(put3)               $     sectorlength);
+  move(x, st[buffer0])        $   diskwait(ready);
+  push(write0)                $   place(buffer, addr);
+  push(st[s+2])               $   disktransfer(write,
+  push(st[s+4])               $     driveno, sectorno)
+  call(disktransfer)          $ end
+  pop(3)
+  return
+
+do kernelcall:                $ proc kernelcall(
+  move(st[sp+2], x)           $   procno: int)
+  multiply(6, x)              $ begin
+  add(kernelcall2, x)         $   if procno = cursorno
+  move(x, pc)                 $     do cursor
+do kernelcall2:               $   else procno = eraseno
+  call(cursor)                $     do erase
+  return                      $   else procno = displayno
+  call(erase)                 $     do display
+  return                      $   else procno = acceptno
+  call(display)               $     do accept
+  return                      $   else procno = printno
+  call(accept)                $     do print
+  return                      $   else procno = getno
+  call(print)                 $     do get
+  return                      $   else procno = putno
+  call(get)                   $     do put
+  return                      $   end
+  call(put)                   $ end
+  return
+
+$ "standard instructions"
+
+$ "comment:
+$    empty # 'newline'"
+
+const next = #13507
+
+do newline:                   $ proc newline(lineno: int)
+  instr(next)                 $ begin p := p + 2 end
+
+$ "library_procedure:
+$   'goto' 'libproc' expression 'endlib'"
+
+do goto:                      $ proc goto(displ: int)
+  add(st[p], p)               $ begin
+  test(st[p-])                $   p := p + displ
+  instr(next)                 $ end
+
+do libproc:                   $ proc libproc(paramlength,
+  move(st[p+], x)             $   templength, lineno: int)
+  move(st[p+], y)             $ begin
+  move(st[p+], st[ln])        $   if tasks > 1 do
+  compare(1, st[tasks])       $     callerror(lineno)
+  ifequal(libproc2)           $   end;
+  call(callerror)             $   st[b + 2] :=
+do libproc2:                  $     b - paramlength - 1;
+  move(b, w)                  $   if s + templength > t do
+  subtract(x, w)              $     variablelimit(lineno)
+  move(w, st[b + 4])          $   end;
+  add(s, y)                   $   p := p + 4
+  compare(st[t], y)           $ end
+  ifnotlower(libproc3)
+  call(variablelimit)
+do libproc3:
+  instr(next)
+
+array id2 [name]              $ proc endlib(lineno: int)
+word length2                  $ begin
+do endlib:                    $   moveprogram;
+  move(st[p+], st[ln])        $   p := t + namelength + 2
+  call(moveprogram)           $ end
+  move(st[t], p)
+  add(namelength, p)
+  add(4, p)
+  instr(next)
+
+$ "complete_procedure:
+$    [ 'goto' ] 'procedure' [ declaration ]*
+$    statement_part 'endproc'"
+
+do procedure:                 $ proc procedure(
+  move(b, w)                  $   paramlength, varlength,
+  subtract(st[p+], w)         $   templength, lineno: int)
+  test(st[w-])                $ begin
+  move(w, st[b+4])            $   st[b + 2] :=
+  add(st[p+], s)              $     b - paramlength - 1;
+  move(st[p+], x)             $   s := s + varlength;
+  move(st[p+], st[ln])        $   if s + templength > t do
+  add(s, x)                   $     variablelimit(lineno)
+  compare(st[t], x)           $   end;
+  ifnotlower(procedure2)      $   p := p + 5
+  call(variablelimit)         $ end
+do procedure2:
+  instr(next)
+
+do endproc:                   $ proc endproc
+  test(st[b+8])               $ begin
+  ifequal(endproc2)           $   if st[b + 4] <> none do
+  move(b, x)                  $     p := st[b + 4];
+  test(st[x+])                $     t := st[b + 3];
+  move(st[x+], b)             $     s := st[b + 2];
+  move(st[x+], s)             $     b := st[b + 1]
+  move(st[x+], st[t])         $   else true do
+  move(st[x], p)              $     p := p + 1
+do endproc2:                  $   end
+  instr(next)                 $ end
+
+$ "procedure_declaration:
+$    complete_procedure # library_procedure # empty
+$  module_declaration:
+$    [ declaration ]* statement_part
+$  declaration:
+$    procedure_declaration # module_declaration # empty"
+
+$ "variable_symbol:
+$    whole_variable #
+$    variable_symbol [ 'field '] #
+$    variable_symbol expression 'index'
+$  whole_variable:
+$    'instance' 'variable' [ 'value' ]"
+
+do field:                     $ proc field(displ: int)
+  add(st[p+], st[s])          $ begin
+  instr(next)                 $   st[s] := st[s] + displ;
+                              $   p := p + 2
+                              $ end
+
+do index:                     $ proc index(lower, upper,
+  move(st[p+], w)             $   length, lineno: int)
+  move(st[p+], x)             $ var i: int
+  move(st[p+], y)             $ begin
+  move(st[p+], st[ln])        $   i := st[s];
+  compare(st[s], x)           $   s := s - 1;
+  ifgreater(index2)           $   if (i < lower) or
+  move(st[s], x)              $     (i > upper) do
+  subtract(w, x)              $       rangeerror(lineno)
+  ifnotless(index3)           $   end;
+do index2:                    $   st[s] := st[s] +
+  call(rangeerror)            $     (i - lower) * length;
+do index3:                    $   p := p + 5
+  multiply(y, x)              $ end
+  add(x, st[s-])
+  instr(next)
+
+do instance:                  $ proc instance(steps: int)
+  move(b, x)                  $ var link, m: int
+  move(st[p+], w)             $ begin link := b;
+  ifequal(instance3)          $   m := steps;
+do instance2:                 $   while m > 0 do
+  move(st[x], x)              $     link := st[link];
+  repeat(instance2, w)        $     m := m - 1
+do instance3:                 $   end;
+  test(st[s+])                $   s := s + 1;
+  move(x, st[s])              $   st[s] := link;
+  instr(next)                 $   p := p + 2
+                              $ end
+
+do variable:                  $ proc variable(displ: int)
+  add(st[p+], st[s])          $ begin
+  instr(next)                 $   st[s] := st[s] + displ;
+                              $   p := p + 2
+                              $ end
+
+$ "constructor:
+$    elementary_constructor # record_constructor #
+$    array_constructor # set_constructor
+$  elementary_constructor:
+$    expression
+$  record_constructor:
+$    expression [ expression ]*
+$  array_constructor:
+$    expression [ expression ]* [ 'blank' ]
+$  set_constructor:
+$    [ expression ]* 'construct'"
+
+do blank:                     $ proc blank(number: int)
+  move(st[p+], w)             $ var i: int
+do blank2:                    $ begin i := 0;
+  test(st[s+])                $   while i < number do
+  move(space, st[s])          $     i := i + 1;
+  repeat(blank2, w)           $     st[s + i] := int(sp)
+  instr(next)                 $   end;
+                              $   s := s + number;
+                              $   p := p + 2
+                              $ end
+
+word m1                       $ proc construct(number,
+array new [settype]           $   lineno: int)
+do construct:                 $ var member, i: int;
+  move(st[p+], st[m1])        $   new: settype1
+  move(st[p+], st[ln])        $ begin
+  move(settype, w)            $   i := 0;
+  move(new, x)                $   new := settype1;
+do construct2:                $   while i < number do
+  clear(st[x+])               $     member := st[s];
+  repeat(construct2, w)       $     s := s - 1;
+  test(st[s+])                $     if (member < 0) or
+do construct3:                $       (member > setlimit)
+  test(st[m1])                $         do rangeerror(
+  ifequal(construct6)         $           lineno)
+  move(st[s-], w)             $     end;
+  ifless(construct4)          $     new := new +
+  compare(setlimit, w)        $       settype1(member);
+  ifnotless(construct5)       $     i := i + 1
+do construct4:                $   end;
+  call(rangeerror)            $   storeset(s + 1, new);
+do construct5:                $   s := s + setlength;
+  move(w, x)                  $   p := p + 3
+  andnot(#177770, w)          $ end
+  shift(-3, x)
+  move(1, y)
+  shift(w, y)
+  or_byte(y, st[x+new])
+  decrement(st[m1])
+  branch(construct3)
+do construct6:
+  move(settype, w)
+  move(new, x)
+do construct7:
+  move(st[x+], st[s+])
+  repeat(construct7, w)
+  test(st[s-])
+  instr(next)
+
+$ "factor:
+$    'constant' # constructor # variable_symbol 'value' #
+$    'valspace' procedure_call # expression #
+$    factor 'not' # factor"
+
+do constant:                  $ proc constant(value: int)
+  test(st[s+])                $ begin s := s + 1;
+  move(st[p+], st[s])         $   st[s] := value;
+  instr(next)                 $   p := p + 2
+                              $ end
+
+do value:                     $ proc value(length: int)
+  move(st[p+], w)             $ var y, i: int
+  halve(w)                    $ begin y := st[s]; i := 0;
+  move(st[s], x)              $   while i < length do
+do value2:                    $     st[s + i] := st[y + i];
+  move(st[x+], st[s+])        $     i := i + 1
+  repeat(value2, w)           $   end;
+  test(st[s-])                $   s := s + length - 1;
+  instr(next)                 $   p := p + 2
+                              $ end
+
+do valspace:                  $ proc valspace(length: int)
+  add(st[p+], s)              $ begin s := s + length;
+  instr(next)                 $   p := p + 2
+                              $ end
+
+do notx:                      $ proc notx
+  negate(st[s])               $ begin st[s] :=
+  increment(st[s])            $   int(not bool(st[s]));
+  instr(next)                 $   p := p + 1
+                              $ end
+
+$ "term:
+$    factor [ factor muliplying_instruction ]*
+$  muliplying_instruction:
+$    'multiply' # 'divide' # 'modulo' #
+$    'and' # 'intersection'"
+
+const clear_carry = #241
+do multiplyx:                 $ proc multiply(lineno: int)
+  move(st[p+], st[ln])        $ begin
+  move(st[s], x)              $   s := s - 1;
+  instr(clear_carry)          $   st[s] :=
+  multiply(st[s-], x)         $     st[s] * st[s + 1];
+  ifnotcarry(multiply2)       $   if overflow do
+  call(rangeerror)            $     rangeerror(lineno)
+do multiply2:                 $   end;
+  move(x, st[s])              $   p := p + 2
+  instr(next)                 $ end
+
+do dividex:                   $ proc divide(lineno: int)
+  move(st[p+], st[ln])        $ begin
+  move(st[s-], x)             $   s := s - 1;
+  extendsign(w)               $   st[s] :=
+  divide(st[s+2], w)          $     st[s] div st[s + 1];
+  ifnotoverflow(divide2)      $   if overflow do
+  call(rangeerror)            $     rangeerror(lineno)
+do divide2:                   $   end;
+  move(w, st[s])              $   p := p + 2
+  instr(next)                 $ end
+
+do modulo:                    $ proc modulo(lineno: int)
+  move(st[p+], st[ln])        $ begin
+  move(st[s-], x)             $   s := s - 1;
+  extendsign(w)               $   st[s] :=
+  divide(st[s+2], w)          $     st[s] mod st[s + 1];
+  ifnotoverflow(modulo2)      $   if overflow do
+  call(rangeerror)            $     rangeerror(lineno)
+do modulo2:                   $   end;
+  move(x, st[s])              $   p := p + 2
+  instr(next)                 $ end
+
+do andx:                      $ proc andx
+ move(st[s], w)               $ begin s := s - 1;
+ not(w)                       $   st[s] := int(bool(st[s])
+ andnot(w, st[s-])            $     and bool(st[s + 1]));
+ instr(next)                  $   p := p + 1
+                              $ end
+
+do intersection:              $ proc intersection
+  move(settype, w)            $ var x, y: settype1
+  test(st[s+])                $ begin
+  move(s, x)                  $   s := s - setlength;
+  subtract(setlength, x)      $   loadset(s + 1, y);
+do intersection2:             $   loadset(
+  not(st[s-])                 $     s - setlength + 1, x);
+  andnot(st[s], st[x-])       $   x := x * y;
+  repeat(intersection2, w)    $   storeset(
+  test(st[s-])                $     s - setlength + 1, x);
+  instr(next)                 $   p := p + 1
+                              $ end
+
+$ "signed_term:
+$    term [ empty # 'minus' ]"
+
+do minusx:                    $ proc minus(lineno: int)
+  move(st[p+], st[ln])        $ begin
+  negate(st[s])               $   st[s] := - st[s];
+  ifnotoverflow(minus2)       $   if overflow do
+  call(rangeerror)            $     rangeerror(lineno)
+do minus2:                    $   end;
+  instr(next)                 $   p := p + 2
+                              $ end
+
+$ "simple_expression:
+$    signed_term [ term adding_instruction ]*
+$  adding_instruction:
+$    'add' # 'subtract' # 'or' # 'union' # 'difference'"
+
+do addx:                      $ proc add(lineno: int)
+  move(st[p+], st[ln])        $ begin
+  add(st[s], st[s-])          $   s := s - 1;
+  ifnotoverflow(add2)         $   st[s] :=
+  call(rangeerror)            $     st[s] + st[s + 1];
+do add2:                      $   if overflow do
+  instr(next)                 $     rangeerror(lineno)
+                              $   end;
+                              $   p := p + 2
+                              $ end
+
+do subtractx:                 $ proc subtract(lineno: int)
+  move(st[p+], st[ln])        $ begin
+  subtract(st[s], st[s-])     $   s := s - 1;
+  ifnotoverflow(subtract2)    $   st[s] :=
+  call(rangeerror)            $     st[s] - st[s + 1];
+do subtract2:                 $   if overflow do
+  instr(next)                 $     rangeerror(lineno)
+                              $   end;
+                              $   p := p + 2
+                              $ end
+
+do orx:                       $ proc orx
+  or(st[s], st[s-])           $ begin s := s - 1;
+  instr(next)                 $   st[s] := int(bool(st[s])
+                              $     or bool(st[s + 1]));
+                              $   p := p + 1
+                              $ end
+
+do union:                     $ proc union
+  move(settype, w)            $ var x, y: settype1
+  test(st[s+])                $ begin
+  move(s, x)                  $   s := s - setlength;
+  subtract(setlength, x)      $   loadset(s + 1, y);
+do union2:                    $   loadset(
+  or(st[s-], st[x-])          $     s - setlength + 1, x);
+  repeat(union2, w)           $   x := x + y;
+  test(st[s-])                $   storeset(
+  instr(next)                 $     s - setlength + 1, x);
+                              $   p := p + 1
+                              $ end
+
+do difference:                $ proc difference
+  move(settype, w)            $ var x, y: settype1
+  test(st[s+])                $ begin
+  move(s, x)                  $   s := s - setlength;
+  subtract(setlength, x)      $   loadset(s + 1, y);
+do difference2:               $   loadset(
+  andnot(st[s-], st[x-])      $     s - setlength + 1, x);
+  repeat(difference2, w)      $   x := x - y;
+  test(st[s-])                $   storeset(
+  instr(next)                 $     s - setlength + 1, x);
+                              $   p := p + 1
+                              $ end
+
+$ "expression:
+$    simple_expression
+$      [ simple_expression relational_instruction ]
+$  relational_instruction:
+$    'equal' # 'notequal' # 'less' # 'notless' #
+$    'greater' # 'notgreater' # 'in'"
+
+do equal:                     $ proc equal(length: int)
+  move(st[p+], w)             $ var y, i: int
+  test(st[s+])                $ begin
+  subtract(w, s)              $   y := s - length + 1;
+  move(s, y)                  $   s := y - length;
+  subtract(w, s)              $   i := 0;
+  move(s, x)                  $   while (i < length - 1)
+  halve(w)                    $     and (st[s + i]
+do equal2:                    $       = st[y + i]) do
+  compare(st[x+], st[y+])     $         i := i + 1
+  ifnotequal(equal3)          $   end;
+  repeat(equal2, w)           $   st[s] := int(
+do equal3:                    $     st[s + i] = st[y + i]);
+  clear(w)                    $   p := p + 2
+  compare(st[x-], st[y-])     $ end
+  ifnotequal(equal4)
+  increment(w)
+do equal4:
+  move(w, st[s])
+  instr(next)
+
+do notequal:                  $ proc notequal(
+  move(st[p+], w)             $   length: int)
+  test(st[s+])                $ var y, i: int
+  subtract(w, s)              $ begin
+  move(s, y)                  $   y := s - length + 1;
+  subtract(w, s)              $   s := y - length;
+  move(s, x)                  $   i := 0;
+  halve(w)                    $   while (i < length - 1)
+do notequal2:                 $     and (st[s + i]
+  compare(st[x+], st[y+])     $       = st[y + i]) do
+  ifnotequal(notequal3)       $         i := i + 1
+  repeat(notequal2, w)        $   end;
+do notequal3:                 $   st[s] := int(
+  clear(w)                    $     st[s + i] <>
+  compare(st[x-], st[y-])     $       st[y + i]);
+  ifequal(notequal4)          $   p := p + 2
+  increment(w)                $ end
+do notequal4:
+  move(w, st[s])
+  instr(next)
+
+do less:                      $ proc less
+  clear(w)                    $ begin
+  compare(st[s], st[s-])      $   s := s - 1;
+  ifnotgreater(less2)         $   st[s] := int(
+  increment(w)                $     st[s] < st[s + 1]);
+do less2:                     $   p := p + 1
+  move(w, st[s])              $ end
+  instr(next)
+
+do notless:                   $ proc notless
+  clear(w)                    $ begin
+  compare(st[s], st[s-])      $   s := s - 1;
+  ifgreater(notless2)         $   st[s] := int(
+  increment(w)                $     st[s] >= st[s + 1]);
+do notless2:                  $   p := p + 1
+  move(w, st[s])              $ end
+  instr(next)
+
+do greater:                   $ proc greater
+  clear(w)                    $ begin
+  compare(st[s], st[s-])      $   s := s - 1;
+  ifnotless(greater2)         $   st[s] := int(
+  increment(w)                $     st[s] > st[s + 1]);
+do greater2:                  $   p := p + 1
+  move(w, st[s])              $ end
+  instr(next)
+
+do notgreater:                $ proc notgreater
+  clear(w)                    $ begin
+  compare(st[s], st[s-])      $   s := s - 1;
+  ifless(notgreater2)         $   st[s] := int(
+  increment(w)                $     st[s] <= st[s + 1]);
+do notgreater2:               $   p := p + 1
+  move(w, st[s])              $ end
+  instr(next)
+
+do inx:                       $ proc inx(lineno: int)
+  move(st[p+], st[ln])        $ var x: int;
+  subtract(setlength, s)      $   y: settype1
+  move(st[s], w)              $ begin
+  ifless(inx2)                $   s := s - setlength;
+  compare(setlimit, w)        $   loadset(s + 1, y);
+  ifnotless(inx3)             $   x := st[s];
+do inx2:                      $   if (x < 0) or
+  call(rangeerror)            $     (x > setlimit) do
+do inx3:                      $       rangeerror(lineno)
+  move(w, x)                  $   end;
+  andnot(#177770, w)          $   st[s] := int(
+  shift(-3, x)                $     x in y);
+  add(s, x)                   $   p := p + 2
+  move(1, y)                  $ end
+  shift(w, y)
+  clear(w)
+  testbit_byte(y, st[x+2])
+  ifequal(inx4)
+  increment(w)
+do inx4:
+  move(w, st[s])
+  instr(next)
+
+$ "assignment_statement:
+$    variable_symbol expression 'assign'"
+
+do assign:                    $ proc assign(length: int)
+  move(st[p+], w)             $ var x, y, i: int
+  test(st[s+])                $ begin
+  subtract(w, s)              $   s := s - length - 1;
+  move(s, y)                  $   x := st[s + 1];
+  move(st[s-], x)             $   y := s + 2;
+  test(st[s-])                $   i := 0;
+  halve(w)                    $   while i < length do
+do assign2:                   $     st[x + i] := st[y + i];
+  move(st[y+], st[x+])        $     i := i + 1
+  repeat(assign2, w)          $   end;
+  instr(next)                 $   p := p + 2
+                              $ end
+
+$ "standard_call:
+$    variable_symbol 'addr' #
+$    'halt' #
+$    expression variable_symbol 'obtain' #
+$    expression expression 'place' #
+$    expression expression 'sense'"
+
+do addrx:                     $ proc addrx
+  subtract(2, s)              $ begin s := s - 1;
+  move(st[s+2], st[s])        $   st[s] := st[s + 1];
+  instr(next)                 $   p := p + 1
+                              $ end
+
+text halttext = 'halt#'       $ proc haltx(lineno: int)
+do haltx:                     $ begin stop(lineno,
+  move(st[p+], st[ln])        $   text('halt#'))
+  push(halttext)              $ end
+  call(stop)
+
+do obtainx:                   $ proc obtainx
+  subtract(4, s)              $ begin s := s - 2;
+  move(st[st[s+2]],           $   obtain(st[s + 1],
+    st[st[s+4]])              $     st[st[s + 2]])
+  instr(next)                 $ end
+
+do placex:                    $ proc placex
+  subtract(4, s)              $ begin s := s - 2;
+  move(st[s+4],               $   place(st[s + 1],
+    st[st[s+2]])              $     st[s + 2]);
+  instr(next)                 $   p := p + 1
+                              $ end
+
+do sensex:                    $ proc sensex
+  clear(w)                    $ begin
+  testbit(st[s], st[st[s-]])  $   s := s - 2;
+  ifequal(sense2)             $   st[s] :=
+  increment(w)                $     sense(st[s + 1],
+do sense2:                    $       st[s + 2]):int;
+  move(w, st[s-])             $   p := p + 1
+  instr(next)                 $ end
+
+$ "procedure_argument:
+$    'instance' 'procarg' # 'instance' 'paramarg'"
+
+do procarg:                   $ proc procarg(displ: int)
+  test(st[s+])                $ begin
+  move(p, st[s])              $   s := s + 1;
+  subtract(2, st[s])          $   st[s] := p + displ;
+  add(st[p+], st[s])          $   p := p + 2
+  instr(next)                 $ end
+
+do paramarg:                  $ proc paramarg(displ: int)
+  move(st[s], x)              $ var addr: int
+  add(st[p+], x)              $ begin
+  move(st[x+], st[s+])        $   addr := st[s] + displ;
+  move(st[x+], st[s])         $   st[s] := st[addr];
+  instr(next)                 $   st[s + 1] :=
+                              $     st[addr + 1];
+                              $   s := s + 1; p := p + 2
+                              $ end
+
+$ "argument:
+$    expression # variable_symbol # procedure_argument
+$  argument_list:
+$    argument [ argument ]*
+$  procedure_call:
+$    standard_call #
+$    [ argument_list ] 'instance' 'proccall' #
+$    [ argument_list ] 'instance' 'paramcall'"
+
+do proccall:                  $ proc proccall(displ: int)
+  move(p, x)                  $ begin
+  add(st[p+], x)              $   st[s + 1] := b;
+  test(st[x-])                $   st[s + 3] := t;
+  move(s, y)                  $   st[s + 4] := p + 2;
+  test(st[s+])                $   b := s;
+  move(b, st[s+])             $   s := s + 4;
+  test(st[s+])                $   p := p + displ
+  move(st[t], st[s+])         $ end
+  move(p, st[s])
+  move(y, b)
+  move(x, p)
+  instr(next)
+
+do paramcall:                 $ proc paramcall(displ: int)
+  move(st[s], x)              $ var addr, dest: int
+  add(st[p+], x)              $ begin
+  move(st[x+2], w)            $   addr := st[s] + displ;
+  compare(maxparam, w)        $   dest := st[addr + 1];
+  iflower(paramcall2)         $   if dest <= maxparam do
+  test(st[s-])                $     s := s - 1;
+  push(w)                     $     kernelcall(dest);
+  call(kernelcall)            $     p := p + 2
+  pop(1)                      $   else true do
+  branch(paramcall3)          $     st[s] := st[addr];
+do paramcall2:                $     st[s + 1] := b;
+  move(s, y)                  $     st[s + 3] := t;
+  move(st[x+], st[s+])        $     st[s + 4] := p + 2;
+  move(b, st[s+])             $     b := s;
+  test(st[s+])                $     s := s + 4;
+  move(st[t], st[s+])         $     p := dest
+  move(p, st[s])              $   end
+  move(y, b)                  $ end
+  move(w, p)
+do paramcall3:
+  instr(next)
+
+$ "conditional_statement:
+$    [ expression 'do' ] statement_list [ 'else' ]
+$  conditional_statement_list:
+$    conditional_statement_list [ conditional_statement_list ]*"
+
+do dox:                       $ proc dox(displ: int)
+  move(st[p+], w)             $ begin
+  test(st[s])                 $   if bool(st[s]) do
+  ifnotequal(do2)             $     p := p + 2
+  add(w, p)                   $   else true do
+  subtract(4, p)              $     p := p + displ
+do do2:                       $   end;
+  test(st[s-])                $   s := s - 1
+  instr(next)                 $ end
+
+do elsex:                     $ proc elsex(displ: int)
+  add(st[p], p)               $ begin
+  test(st[p-])                $   p := p + displ
+  instr(next)                 $ end
+
+$ "if_statement:
+$    conditional_statement_list
+$  while_statement:
+$    conditional_statement_list
+$  when_statement:
+$    'when' conditional_statement_list 'wait' 'endwhen'"
+
+do whenx:                     $ proc whenx
+  instr(next)                 $ begin p := p + 1 end
+
+do wait:                      $ proc wait(displ: int)
+  add(st[p], p)               $ begin p := p + displ;
+  test(st[p-])                $   preempt;
+  call(preempt)               $   this := this mod tasks
+  increment(st[this])         $     + 1;
+  compare(st[this], st[tasks])$   resume
+  ifnotgreater(wait2)         $ end
+  move(1, st[this])
+do wait2:
+  call(resume)
+  instr(next)
+
+do endwhen:                   $ proc endwhen
+  instr(next)                 $ begin p := p + 1 end
+
+$ "process_statement:
+$    'process' statement_list 'also'"
+
+do process:
+  move(st[p+], w)             $ proc process(templength,
+  move(st[p+], st[ln])        $   lineno: int)
+  add(s, w)                   $ begin
+  compare(st[t], w)           $   if s + templength > t do
+  ifnotlower(process2)        $     variablelimit(lineno)
+  call(variablelimit)         $   end;
+do process2:                  $   p := p + 3
+  instr(next)                 $ end
+
+do alsox:                     $ proc alsox(displ: int)
+  move(st[tasks], w)          $ begin
+  compare(1, w)               $   if tasks > 1 do
+  ifequal(also4)              $     while this < tasks do
+  move(st[this], x)           $       q[this] :=
+  subtract(x, w)              $         q[this + 1];
+  shift(2, w)                 $       this := this + 1
+  ifequal(also3)              $     end;
+  shift(3, x)                 $     tasks := tasks - 1;
+  add(q, x)                   $     this := 1;
+  move(x, y)                  $     resume
+  subtract(statelength, y)    $   else tasks = 1 do
+do also2:                     $     s := stacktop;
+  move(st[x+], st[y+])        $     t := progtop;
+  repeat(also2, w)            $     p := p + displ
+do also3:                     $   end
+  decrement(st[tasks])        $ end
+  move(1, st[this])
+  call(resume)
+  branch(also5)
+do also4:
+  move(st[stacktop], s)
+  move(st[progtop], st[t])
+  add(st[p], p)
+  test(st[p-])
+do also5:
+  instr(next)
+
+$ "process_statement_list:
+$    process_statement [ process_statement ]*
+$  concurrent_statement:
+$    'goto' process_statement 'cobegin'"
+
+word base                     $ proc cobeginx(number,
+word no                       $   lineno: int)
+do cobeginx:                  $ var length, i: int
+  move(p, st[base])           $ begin
+  subtract(2, st[base])       $   "(this = 1) and
+  move(st[p+], st[no])        $    (tasks = 1)"
+  move(st[p+], st[ln])        $   tasks := number;
+  compare(maxproc, st[no])    $   if tasks > maxproc do
+  ifnotless(cobegin2)         $     processlimit(lineno)
+  call(processlimit)          $   end;
+do cobegin2:                  $   stacktop := s;
+  move(s, st[stacktop])       $   progtop := t;
+  move(st[t], st[progtop])    $   length :=
+  move(st[t], x)              $     (t - s) div tasks;
+  subtract(s, x)              $   i := 0;
+  halve(x)                    $   while i < tasks do
+  andnot(#100000, x)          $     i := i + 1;
+  extendsign(w)               $     t := s + length;
+  divide(st[no], w)           $     q[i].bx := b;
+  double(w)                   $     q[i].sx := s;
+  move(st[no], x)             $     q[i].tx := t;
+  move(q, y)                  $     q[i].px := p +
+  move(x, st[tasks])          $       st[p + 2 * i + 2];
+do cobegin3:                  $     s := t
+  move(s, st[t])              $   end;
+  add(w, st[t])               $   this := 1;
+  move(b, st[y+])             $   resume
+  move(s, st[y+])             $ end
+  move(st[t], st[y+])
+  test(st[p+])
+  move(st[base], st[y])
+  add(st[p+], st[y+])
+  move(st[t], s)
+  repeat(cobegin3, x)
+  move(1, st[this])
+  call(resume)
+  instr(next)
+
+$ "statement:
+$    empty # assignment_statement # procedure_call #
+$    if_statement # while_statement #
+$    when_statement # concurrent_statement
+$  statement_list:
+$    statement [ statement ]*
+$  statement_part:
+$    statement_list
+$  program:
+$    program_length complete_procedure 'endcode'"
+
+text endtext = 'terminated#'  $ proc endcode(lineno: int)
+do endcode:                   $ begin stop(lineno, text(
+  move(st[p], st[ln])         $   'terminated#'))
+  push(endtext)               $ end
+  call(stop)
+
+$ "extra instructions"
+
+$ "localvar(displ):
+$    'instance(0)' 'variable(displ)'"
+
+do localvar:                  $ proc localvar(displ: int)
+  test(st[s+])                $ begin s := s + 1;
+  move(b, st[s])              $   st[s] := b + displ;
+  add(st[p+], st[s])          $   p := p + 2
+  instr(next)                 $ end
+
+$ "outervar(displ):
+$    'instance(1)' 'variable(displ)'"
+
+do outervar:                  $ proc outervar(displ: int)
+  test(st[s+])                $ begin s := s + 1;
+  move(st[b], st[s])          $   st[s] := st[b] + displ;
+  add(st[p+], st[s])          $   p := p + 2
+  instr(next)                 $ end
+
+$ "localvalue(displ):
+$    localvar(displ) 'value(1)'"
+
+do localvalue:                $ proc localvalue(displ: int)
+  test(st[s+])                $ begin s := s + 1;
+  move(b, x)                  $   st[s] := st[b + displ];
+  add(st[p+], x)              $   p := p + 2
+  move(st[x], st[s])          $ end
+  instr(next)
+
+$ "outervalue(displ):
+$    outervar(displ) 'value(1)'"
+
+do outervalue:                $ proc outervalue(displ: int)
+  test(st[s+])                $ begin s := s + 1;
+  move(st[b], x)              $   st[s] :=
+  add(st[p+], x)              $     st[st[b] + displ];
+  move(st[x], st[s])          $   p := p + 2
+  instr(next)                 $ end
+
+$ "localset(displ):
+$    localvar(displ) 'value(setlength)'"
+
+do localset:                  $ proc localset(displ: int)
+  test(st[s+])                $ var addr, i: int
+  move(settype, w)            $ begin addr := b + displ;
+  move(b, x)                  $   i := 0;
+  add(st[p+], x)              $   while i < setlength do
+do localset2:                 $     st[s + i + 1] :=
+  move(st[x+], st[s+])        $       st[addr + i];
+  repeat(localset2, w)        $     i := i + 1
+  test(st[s-])                $   end;
+  instr(next)                 $   s := s + setlength;
+                              $   p := p + 2
+                              $ end
+
+$ "outerset(displ):
+$    outervalue(displ) 'value(setlength)'"
+
+do outerset:                  $ proc outerset(displ: int)
+  test(st[s+])                $ var addr, i: int
+  move(settype, w)            $ begin addr := st[b] + displ;
+  move(st[b], x)              $   i := 0;
+  add(st[p+], x)              $   while i < setlength do
+do outerset2:                 $     st[s + i + 1] :=
+  move(st[x+], st[s+])        $       st[addr + i];
+  repeat(outerset2, w)        $     i := i + 1
+  test(st[s-])                $   end;
+  instr(next)                 $   s := s + setlength;
+                              $   p := p + 2
+                              $ end
+
+$ "localcase(vardispl, value, progdispl):
+$    localvalue(vardispl) 'constant(value)'
+$    'equal(1)' 'do(progdispl)'"
+
+do localcase:                 $ proc localcase(vardispl,
+  move(st[p+], w)             $   value, progdispl: int)
+  move(st[p+], x)             $ begin
+  move(st[p+], y)             $   if st[b + vardispl]
+  add(b, w)                   $     = value
+  compare(st[w], x)           $   do p := p + 4
+  ifequal(localcase2)         $   else true do
+  add(y, p)                   $     p := p + progdispl
+  subtract(8, p)              $   end
+do localcase2:                $ end
+  instr(next)
+
+$ "outercase(vardispl, value, progdispl):
+$    outervalue(vardispl) 'constant(value)'
+$    'equal(1)' 'do(progdispl)'"
+
+do outercase:                 $ proc outercase(vardispl,
+  move(st[p+], w)             $   value, progdispl: int)
+  move(st[p+], x)             $ begin
+  move(st[p+], y)             $   if st[st[b] + vardispl]
+  add(st[b], w)               $     = value
+  compare(st[w], x)           $   do p := p + 4
+  ifequal(outercase2)         $   else true do
+  add(y, p)                   $     p := p + progdispl
+  subtract(8, p)              $   end
+do outercase2:                $ end
+  instr(next)
+
+$ "stringconst(number, value1, ..., valuen):
+$    'constant(value1)' ... 'constant(valuen)'"
+
+do stringconst:               $ proc stringconst(
+  move(st[p+], w)             $   number: int)
+  test(st[s+])                $ var i: int
+do stringconst2:              $ begin i := 0;
+  move(st[p+], st[s+])        $   while i < number do
+  repeat(stringconst2, w)     $     i := i + 1;
+  test(st[s-])                $     st[s + i] :=
+  instr(next)                 $       st[p + i + 1]
+                              $   end;
+                              $   s := s + number;
+                              $   p := p + number + 2
+                              $ end
+
+$ "setconst(number, value1, ..., valuen):
+$    stringconst(number, value1, ..., valuen)
+$    'construct(number, lineno)'"
+
+word m2                       $ proc setconst(number: int)
+do setconst:                  $ var i: int; new: settype1
+  move(st[p+], st[m2])        $ begin
+  test(st[s+])                $   new := settype1;
+  move(settype, w)            $   i := 0;
+do setconst2:                 $   while i < number do
+  clear(st[s+])               $     i := i + 1;
+  repeat(setconst2, w)        $     new := new +
+do setconst3:                 $       settype1(
+  move(st[p+], w)             $         st[p + i + 1])
+  move(w, x)                  $   end;
+  andnot(#177770, w)          $   storeset(s + 1, new);
+  shift(-3, x)                $   s := s + setlength;
+  add(s, x)                   $   p := p + number + 2
+  move(1, y)                  $ end
+  shift(w, y)
+  or_byte(y, st[x-setlength])
+  decrement(st[m2])
+  ifnotequal(setconst3)
+  test(st[s-])
+  instr(next)
+
+$ "singleton(value):
+$    'constant(value)' 'construct(1, lineno)'"
+
+do singleton:                 $ proc singleton(value: int)
+  test(st[s+])                $ var new: settype1
+  move(settype, w)            $ begin
+do singleton2:                $   new := settype1(value);
+  clear(st[s+])               $   storeset(s + 1, new);
+  repeat(singleton2, w)       $   s := s + setlength;
+  move(st[p+], w)             $   p := p + 2
+  move(w, x)                  $ end
+  andnot(#177770, w)
+  shift(-3, x)
+  add(s, x)
+  move(1, y)
+  shift(w, y)
+  or_byte(y, st[x-setlength])
+  test(st[s-])
+  instr(next)
+
+$ "elemvalue:
+$    'value(1)'"
+
+do elemvalue:                 $ proc elemvalue
+  move(st[st[s+0]], st[s])    $ begin st[s] := st[st[s]];
+  instr(next)                 $   p := p + 1
+                              $ end
+
+$ "elemassign:
+$    'assign(1)'"
+
+do elemassign:                $ proc elemassign
+  move(st[s], st[st[s-]])     $ begin
+  test(st[s-])                $   st[st[s - 1]] := st[s];
+  instr(next)                 $   s := s - 2; p := p + 1
+                              $ end
+
+$ "outercall(displ):
+$    'instance(1)' 'proccall(displ)'"
+
+do outercall:                 $ proc outercall(displ: int)
+  move(p, x)                  $ begin
+  add(st[p+], x)              $   s := s + 1;
+  test(st[x-])                $   st[s] := st[b];
+  test(st[s+])                $   st[s + 1] := b;
+  move(s, y)                  $   st[s + 3] := t;
+  move(st[b], st[s+])         $   st[s + 4] := p + 2;
+  move(b, st[s+])             $   b := s;
+  test(st[s+])                $   s := s + 4;
+  move(st[t], st[s+])         $   p := p + displ
+  move(p, st[s])              $ end
+  move(y, b)
+  move(x, p)
+  instr(next)
+
+$ "outerparam(displ):
+$    'instance(1)' 'paramcall(displ)'"
+
+do outerparam:                $ proc outerparam(displ: int)
+  move(st[b], x)              $ var addr, dest: int
+  add(st[p+], x)              $ begin
+  move(st[x+2], w)            $   addr := st[b] + displ;
+  compare(maxparam, w)        $   dest := st[addr + 1];
+  iflower(outerparam2)        $   if dest <= maxparam do
+  push(w)                     $     kernelcall(dest);
+  call(kernelcall)            $     p := p + 2
+  pop(1)                      $   else true do
+  branch(outerparam3)         $     s := s + 1;
+do outerparam2:               $     st[s] := st[addr];
+  test(st[s+])                $     st[s + 1] := b;
+  move(s, y)                  $     st[s + 3] := t;
+  move(st[x+], st[s+])        $     st[s + 4] := p + 2;
+  move(b, st[s+])             $     b := s;
+  test(st[s+])                $     s := s + 4;
+  move(st[t], st[s+])         $     p := dest
+  move(p, st[s])              $   end
+  move(y, b)                  $ end
+  move(w, p)
+do outerparam3:
+  instr(next)
+
+$ proc execute_instruction
+$ var op: opcode
+$ begin
+$   op := opcode(st[p]);
+$   if op = add4 do add(st[p + 1])
+$   else op = also4 do alsox(st[p + 1])
+$   else op = and4 do andx
+$   else op = assign4 do assign(st[p + 1])
+$   else op = blank4 do blank(st[p + 1])
+$   else op = cobegin4 do cobeginx(st[p + 1], st[p + 2])
+$   else op = constant4 do constant(st[p + 1])
+$   else op = construct4 do
+$     construct(st[p + 1], st[p + 2])
+$   else op = difference4 do difference
+$   else op = divide4 do divide(st[p + 1])
+$   else op = do4 do dox(st[p + 1])
+$   else op = else4 do elsex(st[p + 1])
+$   else op = endcode4 do endcode(st[p + 1])
+$   else op = endlib4 do endlib(st[p + 1])
+$   else op = endproc4 do endproc
+$   else op = endwhen4 do endwhen
+$   else op = equal4 do equal(st[p + 1])
+$   else op = field4 do field(st[p + 1])
+$   else op = goto4 do goto(st[p + 1])
+$   else op = greater4 do greater
+$   else op = in4 do inx(st[p + 1])
+$   else op = index4 do
+$     index(st[p + 1], st[p + 2], st[p + 3], st[p + 4])
+$   else op = instance4 do instance(st[p + 1])
+$   else op = intersection4 do intersection
+$   else op = less4 do less
+$   else op = libproc4 do
+$     libproc(st[p + 1], st[p + 2], st[p + 3])
+$   else op = minus4 do minus(st[p + 1])
+$   else op = modulo4 do modulo(st[p + 1])
+$   else op = multiply4 do multiply(st[p + 1])
+$   else op = newline4 do newline(st[p + 1])
+$   else op = not4 do notx
+$   else op = notequal4 do notequal(st[p + 1])
+$   else op = notgreater4 do notgreater
+$   else op = notless4 do notless
+$   else op = or4 do orx
+$   else op = paramarg4 do paramarg(st[p + 1])
+$   else op = paramcall4 do paramcall(st[p + 1])
+$   else op = procarg4 do procarg(st[p + 1])
+$   else op = proccall4 do proccall(st[p + 1])
+$   else op = procedure4 do
+$     procedure(st[p + 1], st[p + 2], st[p + 3], st[p + 4])
+$   else op = process4 do process(st[p + 1], st[p + 2])
+$   else op = subtract4 do subtract(st[p + 1])
+$   else op = union4 do union
+$   else op = valspace4 do valspace(st[p + 1])
+$   else op = value4 do value(st[p + 1])
+$   else op = variable4 do variable(st[p + 1])
+$   else op = wait4 do wait(st[p + 1])
+$   else op = when4 do whenx
+$   else op = addr4 do addrx
+$   else op = halt4 do haltx(st[p + 1])
+$   else op = obtain4 do obtainx
+$   else op = place4 do placex
+$   else op = sense4 do sensex
+$   else op = elemassign4 do elemassign
+$   else op = elemvalue4 do elemvalue
+$   else op = localcase4 do
+$     localcase(st[p + 1], st[p + 2], st[p + 3])
+$   else op = localset4 do localset(st[p + 1])
+$   else op = localvalue4 do localvalue(st[p + 1])
+$   else op = localvar4 do localvar(st[p + 1])
+$   else op = outercall4 do outercall(st[p + 1])
+$   else op = outercase4 do
+$     outercase(st[p + 1], st[p + 2], st[p + 3])
+$   else op = outerparam4 do outerparam(st[p + 1])
+$   else op = outerset4 do outerset(st[p + 1])
+$   else op = outervalue4 do outervalue(st[p + 1])
+$   else op = outervar4 do outervar(st[p + 1])
+$   else op = setconst4 do setconst(st[p + 1])
+$   else op = singleton4 do singleton(st[p + 1])
+$   else op = stringconst4 do stringconst(st[p + 1])
+$   end
+$ end
+
+do begin:                     $ begin
+  call(initialize)            $   initialize;
+  instr(next)                 $   while true do
+                              $     execute_instruction
+                              $   end
+                              $ end "kernel"
+
+word minaddr

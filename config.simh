@@ -1,0 +1,85 @@
+set cpu 11/23
+set cpu 64k
+
+set rx disabled
+set ry enabled
+set ry0 single
+set ry1 single
+
+; SIMH doesn't support booting this configuration, so
+; we need to load the bootloader by hand.
+deposit 0000000 000240
+deposit 0000002 000412
+deposit 0000004 002144
+deposit 0000006 000340
+deposit 0000010 002224
+deposit 0000012 000340
+deposit 0000014 000036
+deposit 0000016 000340
+deposit 0000020 000000
+deposit 0000022 000000
+deposit 0000024 002270
+deposit 0000026 000340
+deposit 0000030 012706
+deposit 0000032 157776
+deposit 0000034 000003
+deposit 0000036 012746
+deposit 0000040 000001
+deposit 0000042 012746
+deposit 0000044 000004
+deposit 0000046 012746
+deposit 0000050 000200
+deposit 0000052 004737
+deposit 0000054 000072
+deposit 0000056 000500
+deposit 0000060 032737
+deposit 0000062 000200
+deposit 0000064 177170
+deposit 0000066 001774
+deposit 0000070 000207
+deposit 0000072 012737
+deposit 0000074 000007
+deposit 0000076 177170
+deposit 0000100 004737
+deposit 0000102 000060
+deposit 0000104 016637
+deposit 0000106 000004
+deposit 0000110 177172
+deposit 0000112 004737
+deposit 0000114 000060
+deposit 0000116 016637
+deposit 0000120 000006
+deposit 0000122 177172
+deposit 0000124 032737
+deposit 0000126 000040
+deposit 0000130 177170
+deposit 0000132 001774
+deposit 0000134 012737
+deposit 0000136 000003
+deposit 0000140 177170
+deposit 0000142 004737
+deposit 0000144 000060
+deposit 0000146 012737
+deposit 0000150 000100
+deposit 0000152 177172
+deposit 0000154 004737
+deposit 0000156 000060
+deposit 0000160 016637
+deposit 0000162 000002
+deposit 0000164 177172
+deposit 0000166 032737
+deposit 0000170 000040
+deposit 0000172 177170
+deposit 0000174 001774
+deposit 0000176 000207
+
+echo #
+echo # Load two disk images using the commands:
+echo #
+echo #     attach ry0 disk1.dsk
+echo #     attach ry1 disk2.dsk
+echo #
+echo # and boot using:
+echo #
+echo #     go 0
+echo #

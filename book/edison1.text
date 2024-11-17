@@ -128,7 +128,7 @@ module "word table"
         if name = maxname do fail(namelimit) end;
         value := - name; name := name + 1;
         insert(word, length, i, value); more := false
-      else found(word, length, 1) do
+      else found(word, length, i) do
         value := table[i].alias; more := false
       else true do i := i mod maxword + 1 end
     end
@@ -185,8 +185,8 @@ end
 
 module "nextsym"
 
-* const newline = char (10); endmedium = char (25);
-    space = ' '; quote = '"'; apostrophy = char (39);
+* const newline = char(10); endmedium = char(25);
+    space = ' '; quote = '"'; apostrophy = char(39);
     maxint = 32767
 
   set charset (char)
