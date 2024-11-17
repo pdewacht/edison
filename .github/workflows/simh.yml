@@ -1,0 +1,29 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5.1.0
+      with:
+        go-version: 1.23
+        check-latest: true
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install ninja-build expect simh
+    - name: Build
+      run: ninja
+    - uses: actions/upload-artifact@v4.4.3
+      with:
+        name: edison
+        path: |
+          config.simh
+          disks/system.dsk
+          disks/source*.dsk
