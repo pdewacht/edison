@@ -56,10 +56,10 @@ func (set Set) Union(other Set) Set {
 	return Set{hi: set.hi | other.hi, lo: set.lo | other.lo}
 }
 
-func (set Set) Intersect(other Set) (result Set) {
+func (set Set) Intersect(other Set) Set {
 	return Set{hi: set.hi & other.hi, lo: set.lo & other.lo}
 }
 
-func (set Set) Except(other Set) (result Set) {
+func (set Set) Except(other Set) Set {
 	return Set{hi: set.hi & ^other.hi, lo: set.lo & ^other.lo}
 }
