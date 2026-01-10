@@ -779,7 +779,7 @@ begin "sym = module1" nextsym;
 end
 
 "declaration:
-   constant_declaration list # type_declaration #
+   constant_declaration_list # type_declaration #
    variable_declaration_list # procedure_declaration #
    module_declaration"
 
@@ -999,7 +999,7 @@ end
    type_name '(' field_expression_list ')'
  array_constructor:
    type_name '(' element_expression_list ')'
- set constructor:
+ set_constructor:
    type_name [ '(' member_expression_list ')' ]"
 
 proc constructor(var typ: int; succ: symbols)

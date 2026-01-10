@@ -263,7 +263,7 @@ const ready1 = #200           $   buffer = #177566;
 do write:                     $   ready = #200
   testbit(ready1, st[status1])$ begin
   ifequal(write)              $   while not
-  move(st[sp+2],              $     sense(status, read)
+  move(st[sp+2],              $     sense(status, ready)
     st[buffer1])              $       do skip end;
   return                      $   place(buffer, int(value))
                               $ end
@@ -568,7 +568,7 @@ do accept:                    $ proc accept
 const status3 = #176504       $ proc print
 const buffer3 = #176506       $ const status = #176504;
 const ready3 = #200           $   buffer = #176506;
-do print:                     $   ready3 = #200
+do print:                     $   ready = #200
   testbit(ready3, st[status3])$ var value: char
   ifequal(print)              $ begin value := char(st[s]);
   move(st[s], st[buffer3])    $   while not
@@ -716,9 +716,10 @@ do libproc:                   $ proc libproc(paramlength,
 do libproc2:                  $     b - paramlength - 1;
   move(b, w)                  $   if s + templength > t do
   subtract(x, w)              $     variablelimit(lineno)
-  move(w, st[b + 4])          $   end;
-  add(s, y)                   $   p := p + 4
-  compare(st[t], y)           $ end
+  test(st[w-])                $   end;
+  move(w, st[b + 4])          $   p := p + 4
+  add(s, y)                   $ end
+  compare(st[t], y)
   ifnotlower(libproc3)
   call(variablelimit)
 do libproc3:
@@ -916,8 +917,8 @@ do notx:                      $ proc notx
                               $ end
 
 $ "term:
-$    factor [ factor muliplying_instruction ]*
-$  muliplying_instruction:
+$    factor [ factor multiplying_instruction ]*
+$  multiplying_instruction:
 $    'multiply' # 'divide' # 'modulo' #
 $    'and' # 'intersection'"
 
@@ -1195,8 +1196,9 @@ do haltx:                     $ begin stop(lineno,
 do obtainx:                   $ proc obtainx
   subtract(4, s)              $ begin s := s - 2;
   move(st[st[s+2]],           $   obtain(st[s + 1],
-    st[st[s+4]])              $     st[st[s + 2]])
-  instr(next)                 $ end
+    st[st[s+4]])              $     st[st[s + 2]]);
+  instr(next)                 $   p := p + 1
+                              $ end
 
 do placex:                    $ proc placex
   subtract(4, s)              $ begin s := s - 2;
@@ -1283,7 +1285,7 @@ do paramcall3:
 $ "conditional_statement:
 $    [ expression 'do' ] statement_list [ 'else' ]
 $  conditional_statement_list:
-$    conditional_statement_list [ conditional_statement_list ]*"
+$    conditional_statement [ conditional_statement ]*"
 
 do dox:                       $ proc dox(displ: int)
   move(st[p+], w)             $ begin
@@ -1328,15 +1330,15 @@ do endwhen:                   $ proc endwhen
 $ "process_statement:
 $    'process' statement_list 'also'"
 
-do process:
-  move(st[p+], w)             $ proc process(templength,
-  move(st[p+], st[ln])        $   lineno: int)
-  add(s, w)                   $ begin
-  compare(st[t], w)           $   if s + templength > t do
-  ifnotlower(process2)        $     variablelimit(lineno)
-  call(variablelimit)         $   end;
-do process2:                  $   p := p + 3
-  instr(next)                 $ end
+do process:                   $ proc process(templength,
+  move(st[p+], w)             $   lineno: int)
+  move(st[p+], st[ln])        $ begin
+  add(s, w)                   $   if s + templength > t do
+  compare(st[t], w)           $     variablelimit(lineno)
+  ifnotlower(process2)        $   end;
+  call(variablelimit)         $   p := p + 3
+do process2:                  $ end
+  instr(next)
 
 do alsox:                     $ proc alsox(displ: int)
   move(st[tasks], w)          $ begin
@@ -1369,7 +1371,7 @@ do also5:
 $ "process_statement_list:
 $    process_statement [ process_statement ]*
 $  concurrent_statement:
-$    'goto' process_statement 'cobegin'"
+$    'goto' process_statement_list 'cobegin'"
 
 word base                     $ proc cobeginx(number,
 word no                       $   lineno: int)
@@ -1483,18 +1485,19 @@ do localset2:                 $     st[s + i + 1] :=
                               $ end
 
 $ "outerset(displ):
-$    outervalue(displ) 'value(setlength)'"
+$    outervar(displ) 'value(setlength)'"
 
 do outerset:                  $ proc outerset(displ: int)
   test(st[s+])                $ var addr, i: int
-  move(settype, w)            $ begin addr := st[b] + displ;
-  move(st[b], x)              $   i := 0;
-  add(st[p+], x)              $   while i < setlength do
-do outerset2:                 $     st[s + i + 1] :=
-  move(st[x+], st[s+])        $       st[addr + i];
-  repeat(outerset2, w)        $     i := i + 1
-  test(st[s-])                $   end;
-  instr(next)                 $   s := s + setlength;
+  move(settype, w)            $ begin
+  move(st[b], x)              $   addr := st[b] + displ;
+  add(st[p+], x)              $   i := 0;
+do outerset2:                 $   while i < setlength do
+  move(st[x+], st[s+])        $     st[s + i + 1] :=
+  repeat(outerset2, w)        $       st[addr + i];
+  test(st[s-])                $     i := i + 1
+  instr(next)                 $   end;
+                              $  s := s + setlength;
                               $   p := p + 2
                               $ end
 

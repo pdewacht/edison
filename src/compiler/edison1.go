@@ -320,7 +320,7 @@ func pass1(next func(value *rune), emit func(value symbol), fail func(reason fai
 	letters = capital_letters.Union(small_letters)
 	digits = ConstructFromString("0123456789")
 	alphanum = letters.Union(digits).AddChar('_')
-	special = ConstructFromString("'!\"#$%()*+,-./:;<=>?@[]_")
+	special = ConstructFromString("'!\"#$%&()*+,-./:;<=>?@[]_")
 	graphic = alphanum.Union(special).AddChar(space)
 	comment = graphic.RemoveChar(quote).AddChar(newline)
 	composite = ConstructFromString(":<>")

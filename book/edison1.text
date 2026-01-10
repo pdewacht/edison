@@ -318,7 +318,7 @@ begin
   digits := charset('0123456789');
   alphanum := letters + digits + charset('_');
   special := charset(apostrophy,
-    '!"#$%()*+,-./:;<=>?@[]_');
+    '!"#$%&()*+,-./:;<=>?@[]_');
   graphic := alphanum + special + charset(space);
   comment :=
     graphic - charset(quote) + charset(newline);

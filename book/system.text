@@ -1178,4 +1178,4 @@ begin
     else true do call(op) end;
     flush_library
   end
-end "Edison Operating system"
+end "Edison operating system"

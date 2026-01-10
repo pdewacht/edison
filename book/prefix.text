@@ -40,7 +40,7 @@ proc prefix(
   proc readbool(proc read(var c: char); var value: bool);
   proc readint(proc read(var c: char); var value: int);
   proc readname(proc read(var c: char); var value: name);
-  proc writebool(proc write(d: char); value: bool);
+  proc writebool(proc write(c: char); value: bool);
   proc writeint(proc write(c: char); value, length: int);
   proc writename(proc write(c: char); value: name);
   proc writeline(proc write(c: char); value: line);

@@ -1,4 +1,4 @@
-"Edison-11 compiler: Pass 4
+"Edison - 11 Compiler: Pass 4
 
  Code generation
 
@@ -351,7 +351,7 @@ end
    outervar(displ) 'value(setlength)'"
 
 proc nearby_set(steps, displ: int)
-begin "0 <=_steps <= 1" nextop;
+begin "0 <= steps <= 1" nextop;
   if steps = 0 do oper(localset4)
   else true do oper(outerset4) end;
   offset(displ); push(setlength)
@@ -445,7 +445,7 @@ end
    'constant(value)'"
 
 proc smallconst(value: int)
-begin "in setrange(value)" nextop;
+begin "in_setrange(value)" nextop;
   if op = constant2 do constlist(value)
   else (op = construct2) and (a = 1) do
     singleton(value)
@@ -531,7 +531,7 @@ begin endtemp(templength); endprocx;
 end
 
 "procedure_declaration:
-   complete procedure # library_procedure
+   complete_procedure # library_procedure
  module_declaration:
    [ declaration ]* statement_part
  declaration:
@@ -647,7 +647,7 @@ proc notx
 begin oper(not4); nextop end
 
 "term:
-   factor [ factor multiplying operator ]*
+   factor [ factor multiplying_operator ]*
  multiplying_operator:
    'multiply' # 'divide' # 'modulo' #
    'and' # 'intersection'"
@@ -774,7 +774,7 @@ begin oper(place4); pop(2); nextop end
 proc sensex
 begin oper(sense4); pop(2); nextop end
 
-"procedure argument:
+"procedure_argument:
    'procarg' # 'paramarg'"
 
 proc procarg(level, proclabel: int)
